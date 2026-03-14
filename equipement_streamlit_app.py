@@ -95,6 +95,24 @@ input:-webkit-autofill:focus {
     -webkit-text-fill-color: #f5ead0 !important;
     box-shadow: 0 0 0px 1000px #1a0f05 inset !important;
 }
+/* Surcharge agressive des classes Streamlit internes */
+[data-baseweb="input"] input,
+[data-baseweb="base-input"] input,
+[data-testid="stTextInput"] input,
+[data-testid="stTextInput"] input:focus,
+[data-testid="stTextInput"] input:active,
+[data-testid="stTextInput"] input:hover,
+div[class*="st-"] input {
+    color: #f5ead0 !important;
+    -webkit-text-fill-color: #f5ead0 !important;
+    background-color: rgba(245, 234, 208, 0.08) !important;
+}
+/* Placeholder en gris clair */
+[data-baseweb="input"] input::placeholder,
+[data-testid="stTextInput"] input::placeholder {
+    color: rgba(245, 234, 208, 0.3) !important;
+    -webkit-text-fill-color: rgba(245, 234, 208, 0.3) !important;
+}
 .stSidebar {
     background: rgba(10, 5, 2, 0.95) !important;
     border-right: 1px solid var(--gold) !important;
