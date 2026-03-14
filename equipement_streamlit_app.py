@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
-from supabase import create_client, Client
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import hashlib
-import os
-from datetime import datetime
+from contextlib import contextmanager
 
 # ─────────────────────────────────────────────
 #  CONFIG
@@ -36,13 +36,11 @@ html, body, [class*="css"] {
     background-color: var(--bg) !important;
     color: var(--parchment) !important;
 }
-
 h1, h2, h3 {
     font-family: 'Cinzel', serif !important;
     color: var(--gold) !important;
     letter-spacing: 0.05em;
 }
-
 .stButton > button {
     background: var(--blood) !important;
     color: var(--parchment) !important;
@@ -57,12 +55,10 @@ h1, h2, h3 {
     background: var(--gold) !important;
     color: var(--ink) !important;
 }
-
 .stDataFrame, .stTable {
     background: rgba(245, 234, 208, 0.05) !important;
     border: 1px solid var(--gold) !important;
 }
-
 .stTextInput > div > div > input,
 .stSelectbox > div > div,
 .stNumberInput input,
@@ -72,12 +68,10 @@ h1, h2, h3 {
     border: 1px solid var(--shadow) !important;
     font-family: 'Crimson Text', serif !important;
 }
-
 .stSidebar {
     background: rgba(10, 5, 2, 0.95) !important;
     border-right: 1px solid var(--gold) !important;
 }
-
 .metric-card {
     background: rgba(184, 134, 11, 0.1);
     border: 1px solid var(--gold);
@@ -96,29 +90,19 @@ h1, h2, h3 {
     text-transform: uppercase;
     letter-spacing: 0.1em;
 }
-
 .banner {
     text-align: center;
     padding: 2rem 0 1rem;
     border-bottom: 1px solid var(--gold);
     margin-bottom: 2rem;
 }
-.banner h1 {
-    font-size: 2.8rem !important;
-    text-shadow: 0 0 20px rgba(184,134,11,0.4);
-}
-.banner p {
-    color: rgba(245,234,208,0.5);
-    font-style: italic;
-    font-size: 1.1rem;
-}
-
+.banner h1 { font-size: 2.8rem !important; text-shadow: 0 0 20px rgba(184,134,11,0.4); }
+.banner p  { color: rgba(245,234,208,0.5); font-style: italic; font-size: 1.1rem; }
 div[data-testid="stAlert"] {
     background: rgba(139,26,26,0.2) !important;
     border: 1px solid var(--blood) !important;
     color: var(--parchment) !important;
 }
-
 .tag {
     display: inline-block;
     background: rgba(184,134,11,0.15);
@@ -131,58 +115,83 @@ div[data-testid="stAlert"] {
     letter-spacing: 0.05em;
     margin: 2px;
 }
-
 hr { border-color: var(--gold) !important; opacity: 0.3; }
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-#  SUPABASE
+#  CONNEXION NEON
 # ─────────────────────────────────────────────
-@st.cache_resource
-def get_supabase() -> Client:
-    url  = st.secrets["SUPABASE_URL"]
-    key  = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
+@contextmanager
+def get_conn():
+    """Ouvre une connexion PostgreSQL (Neon) et la ferme proprement."""
+    conn = psycopg2.connect(
+        st.secrets["DATABASE_URL"],
+        cursor_factory=RealDictCursor
+    )
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
-supabase = get_supabase()
+def query(sql: str, params=None) -> list:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params or ())
+            return cur.fetchall()
+
+def execute(sql: str, params=None):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params or ())
+
+def executemany(sql: str, data: list):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(sql, data)
 
 # ─────────────────────────────────────────────
-#  AUTH HELPERS
+#  AUTH
 # ─────────────────────────────────────────────
 def hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
 def login(username: str, password: str):
-    result = supabase.table("users") \
-        .select("*") \
-        .eq("username", username) \
-        .eq("password_hash", hash_password(password)) \
-        .execute()
-    if result.data:
-        return result.data[0]
-    return None
+    rows = query(
+        "SELECT * FROM users WHERE username=%s AND password_hash=%s",
+        (username, hash_password(password))
+    )
+    return dict(rows[0]) if rows else None
 
 # ─────────────────────────────────────────────
 #  DATA HELPERS
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=30)
-def load_equipements():
-    r = supabase.table("equipements").select("*").order("categorie").order("sous_categorie").order("nom").execute()
-    return pd.DataFrame(r.data) if r.data else pd.DataFrame()
+def load_equipements() -> pd.DataFrame:
+    rows = query("SELECT * FROM equipements ORDER BY categorie, sous_categorie, nom")
+    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
 
 @st.cache_data(ttl=30)
-def load_inventory(player_id: int):
-    r = supabase.table("inventaire") \
-        .select("*, equipements(*)") \
-        .eq("player_id", player_id) \
-        .execute()
-    return r.data or []
+def load_inventory(player_id: int) -> pd.DataFrame:
+    rows = query("""
+        SELECT i.id AS inv_id, i.quantite,
+               e.id AS eq_id, e.nom, e.categorie, e.sous_categorie,
+               e.poids_kg, e.prix_deniers, e.notes
+        FROM inventaire i
+        JOIN equipements e ON e.id = i.equipement_id
+        WHERE i.player_id = %s
+        ORDER BY e.categorie, e.nom
+    """, (player_id,))
+    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
 
 @st.cache_data(ttl=30)
-def load_players():
-    r = supabase.table("users").select("id, username, role").eq("role", "joueur").execute()
-    return r.data or []
+def load_players() -> list:
+    rows = query("SELECT id, username, role FROM users WHERE role='joueur' ORDER BY username")
+    return [dict(r) for r in rows]
 
 def invalidate_cache():
     load_equipements.clear()
@@ -244,45 +253,34 @@ def page_admin():
                 cats = ["Toutes"] + sorted(df["categorie"].dropna().unique().tolist())
                 cat_filter = st.selectbox("Catégorie", cats)
             with c2:
-                if cat_filter != "Toutes":
-                    sous = ["Toutes"] + sorted(df[df["categorie"] == cat_filter]["sous_categorie"].dropna().unique().tolist())
-                else:
-                    sous = ["Toutes"] + sorted(df["sous_categorie"].dropna().unique().tolist())
+                sub_df = df[df["categorie"] == cat_filter] if cat_filter != "Toutes" else df
+                sous = ["Toutes"] + sorted(sub_df["sous_categorie"].dropna().unique().tolist())
                 sous_filter = st.selectbox("Sous-catégorie", sous)
             with c3:
                 search = st.text_input("🔍 Rechercher", placeholder="Nom de l'objet...")
 
             filtered = df.copy()
-            if cat_filter != "Toutes":
-                filtered = filtered[filtered["categorie"] == cat_filter]
-            if sous_filter != "Toutes":
-                filtered = filtered[filtered["sous_categorie"] == sous_filter]
-            if search:
-                filtered = filtered[filtered["nom"].str.contains(search, case=False, na=False)]
+            if cat_filter  != "Toutes": filtered = filtered[filtered["categorie"]      == cat_filter]
+            if sous_filter != "Toutes": filtered = filtered[filtered["sous_categorie"] == sous_filter]
+            if search:                  filtered = filtered[filtered["nom"].str.contains(search, case=False, na=False)]
 
             st.markdown(f"**{len(filtered)}** objets trouvés")
-            display_cols = ["categorie", "sous_categorie", "nom", "poids_kg", "prix_deniers", "notes"]
-            display_cols = [c for c in display_cols if c in filtered.columns]
+            disp = ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes"]
+            disp = [c for c in disp if c in filtered.columns]
             st.dataframe(
-                filtered[display_cols].rename(columns={
-                    "categorie": "Catégorie",
-                    "sous_categorie": "Sous-catégorie",
-                    "nom": "Nom",
-                    "poids_kg": "Poids (kg)",
-                    "prix_deniers": "Prix (deniers)",
-                    "notes": "Notes"
+                filtered[disp].rename(columns={
+                    "categorie":"Catégorie","sous_categorie":"Sous-catégorie",
+                    "nom":"Nom","poids_kg":"Poids (kg)","prix_deniers":"Prix (deniers)","notes":"Notes"
                 }),
-                use_container_width=True,
-                hide_index=True
+                use_container_width=True, hide_index=True
             )
 
             st.markdown("---")
             st.markdown("##### 🗑️ Supprimer un équipement")
-            noms = sorted(df["nom"].tolist())
-            to_delete = st.selectbox("Sélectionner l'objet à supprimer", noms)
+            to_delete = st.selectbox("Sélectionner l'objet à supprimer", sorted(df["nom"].tolist()))
             if st.button("Supprimer cet objet", type="primary"):
-                obj_id = df[df["nom"] == to_delete]["id"].values[0]
-                supabase.table("equipements").delete().eq("id", obj_id).execute()
+                obj_id = int(df[df["nom"] == to_delete]["id"].values[0])
+                execute("DELETE FROM equipements WHERE id=%s", (obj_id,))
                 invalidate_cache()
                 st.success(f"« {to_delete} » retiré du catalogue.")
                 st.rerun()
@@ -302,14 +300,10 @@ def page_admin():
 
         if st.button("✅ Ajouter au catalogue"):
             if new_nom.strip():
-                supabase.table("equipements").insert({
-                    "categorie": new_cat.strip(),
-                    "sous_categorie": new_sous.strip(),
-                    "nom": new_nom.strip(),
-                    "poids_kg": new_poids,
-                    "prix_deniers": new_prix,
-                    "notes": new_notes.strip(),
-                }).execute()
+                execute("""
+                    INSERT INTO equipements (categorie, sous_categorie, nom, poids_kg, prix_deniers, notes)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (new_cat.strip(), new_sous.strip(), new_nom.strip(), new_poids, new_prix, new_notes.strip()))
                 invalidate_cache()
                 st.success(f"« {new_nom} » ajouté au catalogue !")
                 st.rerun()
@@ -324,31 +318,28 @@ def page_admin():
             try:
                 df_import = pd.read_csv(uploaded, sep=";", encoding="latin-1")
                 col_map = {
-                    "Catégorie": "categorie",
-                    "Sous-catégorie": "sous_categorie",
-                    "Nom": "nom",
-                    "Poids (Kg)": "poids_kg",
-                    "Prix (Deniers)": "prix_deniers",
-                    "Notes": "notes",
+                    "Catégorie":"categorie","Sous-catégorie":"sous_categorie",
+                    "Nom":"nom","Poids (Kg)":"poids_kg","Prix (Deniers)":"prix_deniers","Notes":"notes",
                 }
                 df_import = df_import.rename(columns=col_map)
-                # Nettoyer les colonnes numériques
                 if "poids_kg" in df_import.columns:
-                    df_import["poids_kg"] = df_import["poids_kg"].astype(str).str.replace(",", ".").astype(float)
+                    df_import["poids_kg"] = df_import["poids_kg"].astype(str).str.replace(",",".").astype(float)
                 if "prix_deniers" in df_import.columns:
                     df_import["prix_deniers"] = pd.to_numeric(df_import["prix_deniers"], errors="coerce").fillna(0).astype(int)
                 if "notes" in df_import.columns:
                     df_import["notes"] = df_import["notes"].fillna("").astype(str)
 
-                keep = [c for c in ["categorie", "sous_categorie", "nom", "poids_kg", "prix_deniers", "notes"] if c in df_import.columns]
+                keep = [c for c in ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes"] if c in df_import.columns]
                 df_import = df_import[keep]
 
                 st.dataframe(df_import.head(10), use_container_width=True)
                 st.caption(f"{len(df_import)} objets détectés")
 
                 if st.button("📥 Importer dans la base"):
-                    records = df_import.to_dict(orient="records")
-                    supabase.table("equipements").insert(records).execute()
+                    records = [tuple(r[c] for c in keep) for _, r in df_import.iterrows()]
+                    cols_sql = ", ".join(keep)
+                    placeholders = ", ".join(["%s"] * len(keep))
+                    executemany(f"INSERT INTO equipements ({cols_sql}) VALUES ({placeholders})", records)
                     invalidate_cache()
                     st.success(f"{len(records)} objets importés avec succès !")
                     st.rerun()
@@ -361,27 +352,16 @@ def page_admin():
         if not players:
             st.info("Aucun joueur enregistré.")
         else:
-            player_names = {p["username"]: p["id"] for p in players}
-            selected_player = st.selectbox("Choisir un joueur", list(player_names.keys()))
-            player_id = player_names[selected_player]
+            player_map = {p["username"]: p["id"] for p in players}
+            selected_player = st.selectbox("Choisir un joueur", list(player_map.keys()))
+            player_id = player_map[selected_player]
 
-            inv = load_inventory(player_id)
-            if not inv:
+            df_inv = load_inventory(player_id)
+            if df_inv.empty:
                 st.info(f"{selected_player} ne possède aucun objet.")
             else:
-                rows = []
-                for item in inv:
-                    eq = item.get("equipements", {}) or {}
-                    rows.append({
-                        "inv_id": item["id"],
-                        "Objet": eq.get("nom", "?"),
-                        "Quantité": item.get("quantite", 1),
-                        "Poids unitaire (kg)": eq.get("poids_kg", 0),
-                        "Poids total (kg)": round(eq.get("poids_kg", 0) * item.get("quantite", 1), 3),
-                        "Catégorie": eq.get("categorie", ""),
-                    })
-                df_inv = pd.DataFrame(rows)
-                poids_total = df_inv["Poids total (kg)"].sum()
+                df_inv["poids_total"] = df_inv["poids_kg"] * df_inv["quantite"]
+                poids_total = df_inv["poids_total"].sum()
 
                 c1, c2 = st.columns(2)
                 with c1:
@@ -396,35 +376,36 @@ def page_admin():
                     </div>""", unsafe_allow_html=True)
 
                 st.markdown("")
-                st.dataframe(df_inv.drop(columns=["inv_id"]), use_container_width=True, hide_index=True)
+                st.dataframe(
+                    df_inv[["nom","quantite","poids_kg","poids_total","categorie"]].rename(columns={
+                        "nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)",
+                        "poids_total":"Poids total (kg)","categorie":"Catégorie"
+                    }),
+                    use_container_width=True, hide_index=True
+                )
 
-                # Retirer un objet de l'inventaire joueur
                 st.markdown("---")
                 st.markdown("##### Retirer un objet de l'inventaire")
-                obj_names = df_inv["Objet"].tolist()
-                to_remove = st.selectbox("Objet à retirer", obj_names, key="admin_remove")
+                to_remove = st.selectbox("Objet à retirer", df_inv["nom"].tolist(), key="admin_remove")
                 if st.button("🗑️ Retirer", key="admin_remove_btn"):
-                    inv_id = df_inv[df_inv["Objet"] == to_remove]["inv_id"].values[0]
-                    supabase.table("inventaire").delete().eq("id", inv_id).execute()
+                    inv_id = int(df_inv[df_inv["nom"] == to_remove]["inv_id"].values[0])
+                    execute("DELETE FROM inventaire WHERE id=%s", (inv_id,))
                     invalidate_cache()
                     st.success(f"« {to_remove} » retiré de l'inventaire de {selected_player}.")
                     st.rerun()
 
-            # Ajouter un objet à l'inventaire d'un joueur
             st.markdown("---")
             st.markdown("##### Ajouter un objet à l'inventaire")
             df_eq = load_equipements()
             if not df_eq.empty:
-                eq_names = sorted(df_eq["nom"].tolist())
-                chosen_eq = st.selectbox("Choisir l'objet", eq_names, key="admin_add_eq")
+                chosen_eq = st.selectbox("Choisir l'objet", sorted(df_eq["nom"].tolist()), key="admin_add_eq")
                 qty = st.number_input("Quantité", min_value=1, max_value=99, value=1, key="admin_add_qty")
                 if st.button("➕ Ajouter à l'inventaire"):
-                    eq_id = df_eq[df_eq["nom"] == chosen_eq]["id"].values[0]
-                    supabase.table("inventaire").insert({
-                        "player_id": player_id,
-                        "equipement_id": int(eq_id),
-                        "quantite": qty,
-                    }).execute()
+                    eq_id = int(df_eq[df_eq["nom"] == chosen_eq]["id"].values[0])
+                    execute(
+                        "INSERT INTO inventaire (player_id, equipement_id, quantite) VALUES (%s, %s, %s)",
+                        (player_id, eq_id, qty)
+                    )
                     invalidate_cache()
                     st.success(f"« {chosen_eq} » (x{qty}) ajouté à l'inventaire de {selected_player}.")
                     st.rerun()
@@ -441,15 +422,14 @@ def page_admin():
         if st.button("👤 Créer le compte"):
             if new_username.strip() and new_password.strip():
                 try:
-                    supabase.table("users").insert({
-                        "username": new_username.strip(),
-                        "password_hash": hash_password(new_password),
-                        "role": "joueur",
-                    }).execute()
+                    execute(
+                        "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, 'joueur')",
+                        (new_username.strip(), hash_password(new_password))
+                    )
                     invalidate_cache()
                     st.success(f"Compte joueur « {new_username} » créé.")
                 except Exception as e:
-                    st.error(f"Erreur : {e}")
+                    st.error(f"Erreur (nom déjà pris ?) : {e}")
             else:
                 st.warning("Nom d'utilisateur et mot de passe requis.")
 
@@ -458,12 +438,12 @@ def page_admin():
         players = load_players()
         if players:
             for p in players:
-                col1, col2 = st.columns([4, 1])
-                with col1:
+                c1, c2 = st.columns([4, 1])
+                with c1:
                     st.markdown(f"🧙 **{p['username']}**")
-                with col2:
+                with c2:
                     if st.button("Supprimer", key=f"del_{p['id']}"):
-                        supabase.table("users").delete().eq("id", p["id"]).execute()
+                        execute("DELETE FROM users WHERE id=%s", (p["id"],))
                         invalidate_cache()
                         st.rerun()
         else:
@@ -483,28 +463,14 @@ def page_joueur():
 
     tab1, tab2 = st.tabs(["🎒 Mon inventaire", "⚔️ Catalogue"])
 
-    # ── TAB 1 : Inventaire ──
     with tab1:
-        inv = load_inventory(user["id"])
-
-        if not inv:
+        df_inv = load_inventory(user["id"])
+        if df_inv.empty:
             st.info("Votre besace est vide. Consultez le catalogue pour vous équiper.")
         else:
-            rows = []
-            for item in inv:
-                eq = item.get("equipements", {}) or {}
-                rows.append({
-                    "inv_id": item["id"],
-                    "Objet": eq.get("nom", "?"),
-                    "Quantité": item.get("quantite", 1),
-                    "Poids unitaire (kg)": eq.get("poids_kg", 0),
-                    "Poids total (kg)": round(eq.get("poids_kg", 0) * item.get("quantite", 1), 3),
-                    "Catégorie": eq.get("categorie", ""),
-                    "Notes": eq.get("notes", ""),
-                })
-            df_inv = pd.DataFrame(rows)
-            poids_total = df_inv["Poids total (kg)"].sum()
-            nb_objets   = df_inv["Quantité"].sum()
+            df_inv["poids_total"] = df_inv["poids_kg"] * df_inv["quantite"]
+            poids_total = df_inv["poids_total"].sum()
+            nb_objets   = df_inv["quantite"].sum()
 
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -525,22 +491,23 @@ def page_joueur():
 
             st.markdown("")
             st.dataframe(
-                df_inv.drop(columns=["inv_id"]),
-                use_container_width=True,
-                hide_index=True
+                df_inv[["nom","quantite","poids_kg","poids_total","categorie","notes"]].rename(columns={
+                    "nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)",
+                    "poids_total":"Poids total (kg)","categorie":"Catégorie","notes":"Notes"
+                }),
+                use_container_width=True, hide_index=True
             )
 
             st.markdown("---")
             st.markdown("##### Retirer un objet")
-            to_remove = st.selectbox("Objet à retirer", df_inv["Objet"].tolist())
+            to_remove = st.selectbox("Objet à retirer", df_inv["nom"].tolist())
             if st.button("🗑️ Retirer de mon inventaire"):
-                inv_id = df_inv[df_inv["Objet"] == to_remove]["inv_id"].values[0]
-                supabase.table("inventaire").delete().eq("id", inv_id).execute()
+                inv_id = int(df_inv[df_inv["nom"] == to_remove]["inv_id"].values[0])
+                execute("DELETE FROM inventaire WHERE id=%s", (inv_id,))
                 invalidate_cache()
                 st.success(f"« {to_remove} » retiré de votre inventaire.")
                 st.rerun()
 
-    # ── TAB 2 : Catalogue ──
     with tab2:
         df = load_equipements()
         if df.empty:
@@ -551,50 +518,39 @@ def page_joueur():
                 cats = ["Toutes"] + sorted(df["categorie"].dropna().unique().tolist())
                 cat_filter = st.selectbox("Catégorie", cats, key="jcat")
             with c2:
-                if cat_filter != "Toutes":
-                    sous = ["Toutes"] + sorted(df[df["categorie"] == cat_filter]["sous_categorie"].dropna().unique().tolist())
-                else:
-                    sous = ["Toutes"] + sorted(df["sous_categorie"].dropna().unique().tolist())
+                sub_df = df[df["categorie"] == cat_filter] if cat_filter != "Toutes" else df
+                sous = ["Toutes"] + sorted(sub_df["sous_categorie"].dropna().unique().tolist())
                 sous_filter = st.selectbox("Sous-catégorie", sous, key="jsous")
             with c3:
                 search = st.text_input("🔍 Rechercher", placeholder="Nom...", key="jsearch")
 
             filtered = df.copy()
-            if cat_filter != "Toutes":
-                filtered = filtered[filtered["categorie"] == cat_filter]
-            if sous_filter != "Toutes":
-                filtered = filtered[filtered["sous_categorie"] == sous_filter]
-            if search:
-                filtered = filtered[filtered["nom"].str.contains(search, case=False, na=False)]
+            if cat_filter  != "Toutes": filtered = filtered[filtered["categorie"]      == cat_filter]
+            if sous_filter != "Toutes": filtered = filtered[filtered["sous_categorie"] == sous_filter]
+            if search:                  filtered = filtered[filtered["nom"].str.contains(search, case=False, na=False)]
 
             st.markdown(f"**{len(filtered)}** objets")
-            display_cols = ["categorie", "sous_categorie", "nom", "poids_kg", "prix_deniers", "notes"]
-            display_cols = [c for c in display_cols if c in filtered.columns]
+            disp = ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes"]
+            disp = [c for c in disp if c in filtered.columns]
             st.dataframe(
-                filtered[display_cols].rename(columns={
-                    "categorie": "Catégorie",
-                    "sous_categorie": "Sous-catégorie",
-                    "nom": "Nom",
-                    "poids_kg": "Poids (kg)",
-                    "prix_deniers": "Prix (deniers)",
-                    "notes": "Notes"
+                filtered[disp].rename(columns={
+                    "categorie":"Catégorie","sous_categorie":"Sous-catégorie",
+                    "nom":"Nom","poids_kg":"Poids (kg)","prix_deniers":"Prix (deniers)","notes":"Notes"
                 }),
-                use_container_width=True,
-                hide_index=True
+                use_container_width=True, hide_index=True
             )
 
             st.markdown("---")
             st.markdown("##### Ajouter un objet à mon inventaire")
-            eq_names = sorted(filtered["nom"].tolist()) if not filtered.empty else sorted(df["nom"].tolist())
-            chosen_eq = st.selectbox("Choisir l'objet", eq_names, key="jadd_eq")
+            eq_list = sorted(filtered["nom"].tolist()) if not filtered.empty else sorted(df["nom"].tolist())
+            chosen_eq = st.selectbox("Choisir l'objet", eq_list, key="jadd_eq")
             qty = st.number_input("Quantité", min_value=1, max_value=99, value=1, key="jadd_qty")
             if st.button("➕ Ajouter à mon inventaire"):
-                eq_id = df[df["nom"] == chosen_eq]["id"].values[0]
-                supabase.table("inventaire").insert({
-                    "player_id": user["id"],
-                    "equipement_id": int(eq_id),
-                    "quantite": qty,
-                }).execute()
+                eq_id = int(df[df["nom"] == chosen_eq]["id"].values[0])
+                execute(
+                    "INSERT INTO inventaire (player_id, equipement_id, quantite) VALUES (%s, %s, %s)",
+                    (user["id"], eq_id, qty)
+                )
                 invalidate_cache()
                 st.success(f"« {chosen_eq} » (x{qty}) ajouté à votre inventaire !")
                 st.rerun()
@@ -602,25 +558,22 @@ def page_joueur():
 # ─────────────────────────────────────────────
 #  SIDEBAR
 # ─────────────────────────────────────────────
-def sidebar():
-    with st.sidebar:
-        st.markdown("### 🐉 Navigation")
-        st.markdown("---")
-        if st.session_state.user:
-            u = st.session_state.user
-            role_tag = "Maître des Rêves" if u["role"] == "admin" else "Aventurier"
-            st.markdown(f"**{u['username']}**")
-            st.markdown(f'<span class="tag">{role_tag}</span>', unsafe_allow_html=True)
-            st.markdown("")
-            if st.button("🚪 Se déconnecter"):
-                st.session_state.user = None
-                st.rerun()
+with st.sidebar:
+    st.markdown("### 🐉 Navigation")
+    st.markdown("---")
+    if st.session_state.user:
+        u = st.session_state.user
+        role_tag = "Maître des Rêves" if u["role"] == "admin" else "Aventurier"
+        st.markdown(f"**{u['username']}**")
+        st.markdown(f'<span class="tag">{role_tag}</span>', unsafe_allow_html=True)
+        st.markdown("")
+        if st.button("🚪 Se déconnecter"):
+            st.session_state.user = None
+            st.rerun()
 
 # ─────────────────────────────────────────────
 #  ROUTER
 # ─────────────────────────────────────────────
-sidebar()
-
 if st.session_state.user is None:
     page_login()
 elif st.session_state.user["role"] == "admin":
