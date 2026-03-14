@@ -1,0 +1,103 @@
+Catégorie;Sous-catégorie;Nom;Poids (Kg);Prix (Deniers);Notes;Origine;Auteur
+Armes;Arbalète;Carquois à carreaux;1,00;200;Peut contenir 20 carreaux;1;N/A
+Armes;Arbalète;Carreaux légers (20);0,50;1000;;1;N/A
+Armes;Arbalète;Pied de bouc;1,00;250;;1;N/A
+Armes;Arbalète;Carreaux moyens (20);0,75;1200;;1;N/A
+Armes;Arbalète;Carreaux de poing (20);0,25;500;;1;N/A
+Armes;Arbalète;Arbalète légère;3,50;1800;;1;N/A
+Armes;Arbalète;Arbalète de poing;1,00;2300;;1;N/A
+Armes;Arbalète;Arbalète lourde;9,00;3600;;1;N/A
+Armes;Arbalète;Arbalète moyenne;6,00;2400;;1;N/A
+Armes;Arbalète;Carreaux lourds (20);1,00;1400;;1;N/A
+Armes;Arc;Carquois;1,00;200;Peut contenir 20 flèches;1;N/A
+Armes;Arc;Flèches de chasse;0,25;700;;1;N/A
+Armes;Arc;Flèches légères (20);0,50;900;;1;N/A
+Armes;Arc;Flèches lourdes (20);0,75;1300;;1;N/A
+Armes;Arc;Arc court;1,00;800;;1;N/A
+Armes;Arc;Arc court composite;1,00;1600;;1;N/A
+Armes;Arc;Arc long;1,50;1200;;1;N/A
+Armes;Arc;Arc long composite;1,50;2000;;1;N/A
+Armes;Armes d'hast;Vouge;5,00;800;;1;N/A
+Armes;Armes d'hast;Fauchard-Crochet;4,00;780;;1;N/A
+Armes;Armes d'hast;Fauchard;3,00;780;;1;N/A
+Armes;Armes d'hast;Vouge-Guisarme;6,00;950;;1;N/A
+Armes;Armes d'hast;Trident;4,00;640;;1;N/A
+Armes;Armes d'hast;Doloire;4,00;780;;1;N/A
+Armes;Armes d'hast;Bec de corbin;5,00;1200;;1;N/A
+Armes;Armes d'hast;Esponton;3,00;800;;1;N/A
+Armes;Armes d'hast;Doloire-Guisarme;5,00;850;;1;N/A
+Armes;Armes d'hast;Fourche;6,00;500;;1;N/A
+Armes;Armes d'hast;Hallebarde;6,00;1260;;1;N/A
+Armes;Armes d'hast;Marteau de lucerne;7,00;1560;;1;N/A
+Armes;Armes d'hast;Fourche-Fauchard;4,00;780;;1;N/A
+Armes;Armes d'hast;Pique;3,00;720;;1;N/A
+Armes;Armes d'hast;Serpe-Guisarme;6,00;800;;1;N/A
+Armes;Armes d'hast;Guisarme;4,00;800;;1;N/A
+Armes;Armes d'hast;Spetum;4,00;700;;1;N/A
+Armes;Armes d'hast;Pertuisane;4,00;780;;1;N/A
+Armes;Armes d'hast;Bardiche;7,00;1100;;1;N/A
+Armes;Dague;Dague;0,15;360;;1;N/A
+Armes;Dague;Couteau;0,25;200;;1;N/A
+Armes;Dague;Poignard;0,50;480;;1;N/A
+Armes;Épée à deux mains;Épée à deux mains d’estoc;3,50;5000;;1;N/A
+Armes;Épée à deux mains;Épée courte;1,00;1200;;1;N/A
+Armes;Épée à deux mains;Cimeterre à deux mains;3,50;3000;;1;N/A
+Armes;Épée à deux mains;Épée bâtarde;2,50;3000;;1;N/A
+Armes;Épée à deux mains;Épée bâtarde d’estoc;2,50;3000;;1;N/A
+Armes;Épée à deux mains;Épée à deux mains;3,50;5000;;1;N/A
+Armes;Épée à deux mains;Double dragonne;3,50;5000;Épée à deux mains;2;Denis Gerfaud
+Armes;Épée à une main;Cimeterre;2,00;2500;;1;N/A
+Armes;Épée à une main;Épée dragonne;1,50;2000;Semblable à l'épée longue;2;Denis Gerfaud
+Armes;Épée à une main;Épée cyane;2,00;2500;Cimeterre bleuâtre;2;Denis Gerfaud
+Armes;Épée à une main;Sabre;1,00;2000;;1;N/A
+Armes;Épée à une main;Épée sorde;2,50;2000;;2;Denis Gerfaud
+Armes;Épée à une main;Fleuret;0,50;2500;;1;N/A
+Armes;Épée à une main;Rapière;0,75;2500;;1;N/A
+Armes;Épée à une main;Épée gnome;1,00;1200;Sorte d'épée courte;2;Denis Gerfaud
+Armes;Épée à une main;Épée large;1,50;2000;;1;N/A
+Armes;Épée à une main;Esparlongue;0,75;2000;Arme d'escrime;2;Denis Gerfaud
+Armes;Épée à une main;Épée longue;1,50;2000;;1;N/A
+Armes;Fléau;Fléau à deux mains;4,00;1500;;1;N/A
+Armes;Fléau;Fléau;3,00;1200;;1;N/A
+Armes;Fouet;Fouet;1,00;100;;1;N/A
+Armes;Fronde;Bille de plomb (20);0,50;700;;1;N/A
+Armes;Fronde;Pierre de fronde (20);0,50;0;;1;N/A
+Armes;Fronde;Fronde;0,25;20;;1;N/A
+Armes;Fronde;Lance-pierre;1,00;200;;1;N/A
+Armes;Hache à deux mains;Hache de bataille;4,00;1000;;1;N/A
+Armes;Hache à une main;Hache;2,00;400;Identique à la congnée;1;N/A
+Armes;Hache à une main;Francisque;2,00;500;;1;N/A
+Armes;Lance;Épieux à sanglier;2,00;720;;1;N/A
+Armes;Lance;Harpon;2,50;540;;1;N/A
+Armes;Lance;Lance de cavalerie moyenne;5,00;360;;1;N/A
+Armes;Lance;Lance de cavalerie lourde;7,50;500;;1;N/A
+Armes;Lance;Lance de joute;3,00;400;;1;N/A
+Armes;Lance;Lance de fantassin;2,00;300;;1;N/A
+Armes;Lance;Javelot;1,00;100;;1;N/A
+Armes;Lance;Lance de cavalerie légère;3,00;440;;1;N/A
+Armes;Masse à deux mains;Bâton;2,00;50;;1;N/A
+Armes;Masse à deux mains;Bâton ferré;3,00;200;;1;N/A
+Armes;Masse à deux mains;Maillet de guerre;6,00;840;;1;N/A
+Armes;Masse à une main;Marteau de guerre;3,50;720;;1;N/A
+Armes;Masse à une main;Masse d’armes;2,50;400;;1;N/A
+Armes;Masse à une main;Massette;1,50;200;;1;N/A
+Armes;Masse à une main;Gourdin;1,50;0;;1;N/A
+Armes;Matériel de siège;Baliste;750,00;30000;;1;N/A
+Armes;Matériel de siège;Bélier;250,00;6000;;1;N/A
+Armes;Matériel de siège;Échelle de siège;9,00;250;;1;N/A
+Armes;Matériel de siège;Fascine;2,00;0;;1;N/A
+Armes;Matériel de siège;Mangonneau;1200,00;45000;;1;N/A
+Armes;Matériel de siège;Dard pour baliste;10,00;8000;;1;N/A
+Armes;Matériel de siège;Dard pour scorpion;2,00;2000;;1;N/A
+Armes;Matériel de siège;Feu grégeois;15,00;10000;;1;N/A
+Armes;Matériel de siège;Pavois;9,00;300;;1;N/A
+Armes;Matériel de siège;Pierre de trébuchet;15,00;0;;1;N/A
+Armes;Matériel de siège;Pierre (mangonneau);15,00;0;;1;N/A
+Armes;Matériel de siège;Pierre de baliste;10,00;0;;1;N/A
+Armes;Matériel de siège;Trébuchet;1500,00;90000;;1;N/A
+Armes;Matériel de siège;Tortue (avec bélier);1000,00;25000;;1;N/A
+Armes;Matériel de siège;Scorpion;125,00;20000;;1;N/A
+Armes;Matériel de siège;Tour de siège;2000,00;25000;;1;N/A
+Armes;Sarbacane;Dard pour sarbacane (20), métal;0,25;800;;1;N/A
+Armes;Sarbacane;Dard pour sarbacane (20), bois;0,25;400;;1;N/A
+Armes;Sarbacane;Sarbacane;0,25;500;;1;N/A
