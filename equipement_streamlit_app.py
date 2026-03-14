@@ -79,6 +79,22 @@ h1, h2, h3 {
     background: rgba(245, 234, 208, 0.12) !important;
     border-color: var(--gold) !important;
 }
+/* Force la couleur du texte saisi dans TOUS les états */
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="email"],
+input {
+    color: #f5ead0 !important;
+    -webkit-text-fill-color: #f5ead0 !important;
+    caret-color: #f5ead0 !important;
+}
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #f5ead0 !important;
+    box-shadow: 0 0 0px 1000px #1a0f05 inset !important;
+}
 .stSidebar {
     background: rgba(10, 5, 2, 0.95) !important;
     border-right: 1px solid var(--gold) !important;
