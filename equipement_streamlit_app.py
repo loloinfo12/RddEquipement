@@ -333,23 +333,15 @@ def page_admin():
                 }
 
                 # ── Lire toutes les feuilles / le CSV ──
-                import io, openpyxl
+                import io
                 filename = uploaded.name.lower()
                 if filename.endswith(".csv"):
                     sheets = {"Feuille 1": pd.read_csv(uploaded, sep=";", encoding="latin-1")}
                 else:
-                    # read_only=True ignore les styles avancés (PatternFill, extLst...)
+                    # calamine est un moteur Rust ultra-robuste qui ignore les styles
                     file_bytes = uploaded.read()
-                    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
-                    sheets = {}
-                    for sheet_name in wb.sheetnames:
-                        ws = wb[sheet_name]
-                        data = list(ws.values)
-                        if data:
-                            headers = [str(h).strip() if h is not None else "" for h in data[0]]
-                            rows = data[1:]
-                            sheets[sheet_name] = pd.DataFrame(rows, columns=headers)
-                    wb.close()
+                    xls = pd.ExcelFile(io.BytesIO(file_bytes), engine="calamine")
+                    sheets = {sheet: xls.parse(sheet) for sheet in xls.sheet_names}
 
                 frames = []
                 for sheet_name, df_sheet in sheets.items():
