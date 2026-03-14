@@ -223,15 +223,20 @@ def load_equipements() -> pd.DataFrame:
 @st.cache_data(ttl=30)
 def load_inventory(player_id: int) -> pd.DataFrame:
     rows = query("""
-        SELECT i.id AS inv_id, i.quantite,
+        SELECT i.id AS inv_id, i.quantite, i.localisation,
                e.id AS eq_id, e.nom, e.categorie, e.sous_categorie,
                e.poids_kg, e.prix_deniers, e.notes
         FROM inventaire i
         JOIN equipements e ON e.id = i.equipement_id
         WHERE i.player_id = %s
-        ORDER BY e.categorie, e.nom
+        ORDER BY i.localisation, e.categorie, e.nom
     """, (player_id,))
     return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+
+@st.cache_data(ttl=30)
+def load_player_info(player_id: int) -> dict:
+    rows = query("SELECT id, username, monture, poids_max_joueur FROM users WHERE id=%s", (player_id,))
+    return dict(rows[0]) if rows else {}
 
 @st.cache_data(ttl=30)
 def load_players() -> list:
@@ -242,6 +247,9 @@ def invalidate_cache():
     load_equipements.clear()
     load_inventory.clear()
     load_players.clear()
+    load_player_info.clear()
+
+MONTURES = ["Aucune", "Cheval", "Mule / Âne", "Charrette", "Aligate", "Autre"]
 
 # ─────────────────────────────────────────────
 #  SESSION STATE
@@ -442,43 +450,104 @@ def page_admin():
             selected_player = st.selectbox("Choisir un joueur", list(player_map.keys()))
             player_id = player_map[selected_player]
 
+            # ── Paramètres du joueur (monture + poids max) ──
+            pinfo = load_player_info(player_id)
+            monture_j = pinfo.get("monture") or "Aucune"
+            poids_max_j = float(pinfo.get("poids_max_joueur") or 0)
+
+            with st.expander(f"⚙️ Paramètres de {selected_player}", expanded=False):
+                c1, c2 = st.columns(2)
+                with c1:
+                    monture_idx = MONTURES.index(monture_j) if monture_j in MONTURES else 0
+                    new_monture_j = st.selectbox("Type de monture", MONTURES, index=monture_idx, key="admin_monture")
+                with c2:
+                    new_poids_max_j = st.number_input("Poids max sur soi (kg)", min_value=0.0,
+                                                       value=poids_max_j, step=0.5, format="%.1f", key="admin_poids_max")
+                if st.button("💾 Sauvegarder les paramètres", key="admin_save_params"):
+                    execute("UPDATE users SET monture=%s, poids_max_joueur=%s WHERE id=%s",
+                            (new_monture_j, new_poids_max_j, player_id))
+                    invalidate_cache()
+                    st.success(f"Paramètres de {selected_player} mis à jour.")
+                    st.rerun()
+
             df_inv = load_inventory(player_id)
             if df_inv.empty:
                 st.info(f"{selected_player} ne possède aucun objet.")
             else:
                 df_inv["poids_total"] = df_inv["poids_kg"] * df_inv["quantite"]
-                poids_total = df_inv["poids_total"].sum()
+                df_soi     = df_inv[df_inv["localisation"] == "soi"]
+                df_mont    = df_inv[df_inv["localisation"] == "monture"]
+                poids_soi  = df_soi["poids_total"].sum()
+                poids_mont = df_mont["poids_total"].sum()
 
-                c1, c2 = st.columns(2)
+                c1, c2, c3 = st.columns(3)
                 with c1:
                     st.markdown(f"""<div class="metric-card">
                         <div class="metric-value">{len(df_inv)}</div>
                         <div class="metric-label">Objets différents</div>
                     </div>""", unsafe_allow_html=True)
                 with c2:
+                    couleur = "#c0392b" if poids_max_j > 0 and poids_soi > poids_max_j else "#b8860b"
                     st.markdown(f"""<div class="metric-card">
-                        <div class="metric-value">{poids_total:.2f} kg</div>
-                        <div class="metric-label">Poids total porté</div>
+                        <div class="metric-value" style="color:{couleur}">{poids_soi:.2f} kg</div>
+                        <div class="metric-label">Sur soi{f" / {poids_max_j:.1f} max" if poids_max_j > 0 else ""}</div>
+                    </div>""", unsafe_allow_html=True)
+                with c3:
+                    st.markdown(f"""<div class="metric-card">
+                        <div class="metric-value">{poids_mont:.2f} kg</div>
+                        <div class="metric-label">Sur {monture_j if monture_j != "Aucune" else "monture"}</div>
                     </div>""", unsafe_allow_html=True)
 
                 st.markdown("")
-                st.dataframe(
-                    df_inv[["nom","quantite","poids_kg","poids_total","categorie"]].rename(columns={
-                        "nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)",
-                        "poids_total":"Poids total (kg)","categorie":"Catégorie"
-                    }),
-                    use_container_width=True, hide_index=True
-                )
+
+                # Affichage sur soi
+                st.markdown("**🧍 Sur soi**")
+                if df_soi.empty:
+                    st.caption("Aucun objet sur soi.")
+                else:
+                    for cat in sorted(df_soi["categorie"].dropna().unique()):
+                        df_c = df_soi[df_soi["categorie"] == cat]
+                        with st.expander(f"⚔️ {cat}  •  {df_c['poids_total'].sum():.2f} kg", expanded=False):
+                            st.dataframe(df_c[["nom","quantite","poids_kg","poids_total","localisation"]].rename(columns={
+                                "nom":"Objet","quantite":"Qté","poids_kg":"Poids unit.","poids_total":"Poids total","localisation":"Lieu"
+                            }), use_container_width=True, hide_index=True)
+
+                # Affichage sur monture
+                if monture_j != "Aucune":
+                    st.markdown(f"**🐴 Sur la {monture_j}**")
+                    if df_mont.empty:
+                        st.caption(f"Aucun objet sur la {monture_j}.")
+                    else:
+                        for cat in sorted(df_mont["categorie"].dropna().unique()):
+                            df_c = df_mont[df_mont["categorie"] == cat]
+                            with st.expander(f"⚔️ {cat}  •  {df_c['poids_total'].sum():.2f} kg", expanded=False):
+                                st.dataframe(df_c[["nom","quantite","poids_kg","poids_total"]].rename(columns={
+                                    "nom":"Objet","quantite":"Qté","poids_kg":"Poids unit.","poids_total":"Poids total"
+                                }), use_container_width=True, hide_index=True)
 
                 st.markdown("---")
-                st.markdown("##### Retirer un objet de l'inventaire")
-                to_remove = st.selectbox("Objet à retirer", df_inv["nom"].tolist(), key="admin_remove")
-                if st.button("🗑️ Retirer", key="admin_remove_btn"):
-                    inv_id = int(df_inv[df_inv["nom"] == to_remove]["inv_id"].values[0])
-                    execute("DELETE FROM inventaire WHERE id=%s", (inv_id,))
-                    invalidate_cache()
-                    st.success(f"« {to_remove} » retiré de l'inventaire de {selected_player}.")
-                    st.rerun()
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("##### 🔀 Déplacer un objet")
+                    obj_move = st.selectbox("Objet à déplacer", df_inv["nom"].tolist(), key="admin_move")
+                    loc_act  = df_inv[df_inv["nom"] == obj_move]["localisation"].values[0]
+                    new_loc  = "monture" if loc_act == "soi" else "soi"
+                    lbl      = f"➡️ Mettre sur la {monture_j}" if new_loc == "monture" else "➡️ Mettre sur soi"
+                    if monture_j != "Aucune" or new_loc == "soi":
+                        if st.button(lbl, key="admin_move_btn"):
+                            inv_id = int(df_inv[df_inv["nom"] == obj_move]["inv_id"].values[0])
+                            execute("UPDATE inventaire SET localisation=%s WHERE id=%s", (new_loc, inv_id))
+                            invalidate_cache()
+                            st.rerun()
+                with c2:
+                    st.markdown("##### 🗑️ Retirer un objet de l'inventaire")
+                    to_remove = st.selectbox("Objet à retirer", df_inv["nom"].tolist(), key="admin_remove")
+                    if st.button("🗑️ Retirer", key="admin_remove_btn"):
+                        inv_id = int(df_inv[df_inv["nom"] == to_remove]["inv_id"].values[0])
+                        execute("DELETE FROM inventaire WHERE id=%s", (inv_id,))
+                        invalidate_cache()
+                        st.success(f"« {to_remove} » retiré de l'inventaire de {selected_player}.")
+                        st.rerun()
 
             st.markdown("---")
             st.markdown("##### Ajouter un objet à l'inventaire")
@@ -499,15 +568,24 @@ def page_admin():
                 if add_cat  != "Toutes": filtered_eq = filtered_eq[filtered_eq["categorie"]      == add_cat]
                 if add_sous != "Toutes": filtered_eq = filtered_eq[filtered_eq["sous_categorie"] == add_sous]
 
-                chosen_eq = st.selectbox("Choisir l'objet", sorted(filtered_eq["nom"].tolist()), key="admin_add_eq")
+                c1, c2 = st.columns(2)
+                with c1:
+                    chosen_eq = st.selectbox("Choisir l'objet", sorted(filtered_eq["nom"].tolist()), key="admin_add_eq")
+                with c2:
+                    monture_cur = load_player_info(player_id).get("monture") or "Aucune"
+                    loc_opts   = ["soi"] + (["monture"] if monture_cur != "Aucune" else [])
+                    loc_lbls   = ["🧍 Sur soi"] + ([f"🐴 Sur la {monture_cur}"] if monture_cur != "Aucune" else [])
+                    loc_ch     = st.selectbox("Ranger où ?", loc_lbls, key="admin_add_loc")
+                    loc_v      = loc_opts[loc_lbls.index(loc_ch)]
+
                 if st.button("➕ Ajouter à l'inventaire"):
                     eq_id = int(df_eq[df_eq["nom"] == chosen_eq]["id"].values[0])
                     execute(
-                        "INSERT INTO inventaire (player_id, equipement_id, quantite) VALUES (%s, %s, %s)",
-                        (player_id, eq_id, qty)
+                        "INSERT INTO inventaire (player_id, equipement_id, quantite, localisation) VALUES (%s, %s, %s, %s)",
+                        (player_id, eq_id, qty, loc_v)
                     )
                     invalidate_cache()
-                    st.success(f"« {chosen_eq} » (x{qty}) ajouté à l'inventaire de {selected_player}.")
+                    st.success(f"« {chosen_eq} » (x{qty}) ajouté à l'inventaire de {selected_player} — {loc_ch}.")
                     st.rerun()
 
     # ── TAB 4 : Gestion joueurs ──
@@ -564,58 +642,129 @@ def page_joueur():
     tab1, tab2 = st.tabs(["🎒 Mon inventaire", "⚔️ Catalogue"])
 
     with tab1:
+        # ── Infos joueur (monture + poids max) ──
+        pinfo = load_player_info(user["id"])
+        monture_actuelle = pinfo.get("monture") or "Aucune"
+        poids_max = float(pinfo.get("poids_max_joueur") or 0)
+
+        with st.expander("⚙️ Paramètres du personnage", expanded=False):
+            c1, c2 = st.columns(2)
+            with c1:
+                monture_idx = MONTURES.index(monture_actuelle) if monture_actuelle in MONTURES else 0
+                new_monture = st.selectbox("Type de monture", MONTURES, index=monture_idx, key="j_monture")
+            with c2:
+                new_poids_max = st.number_input("Poids max sur soi (kg)", min_value=0.0, value=poids_max, step=0.5, format="%.1f", key="j_poids_max")
+            if st.button("💾 Sauvegarder", key="j_save_params"):
+                execute("UPDATE users SET monture=%s, poids_max_joueur=%s WHERE id=%s",
+                        (new_monture, new_poids_max, user["id"]))
+                invalidate_cache()
+                st.success("Paramètres sauvegardés !")
+                st.rerun()
+
         df_inv = load_inventory(user["id"])
+
         if df_inv.empty:
             st.info("Votre besace est vide. Consultez le catalogue pour vous équiper.")
         else:
             df_inv["poids_total"] = df_inv["poids_kg"] * df_inv["quantite"]
-            poids_total = df_inv["poids_total"].sum()
-            nb_objets   = df_inv["quantite"].sum()
+            df_soi      = df_inv[df_inv["localisation"] == "soi"]
+            df_monture  = df_inv[df_inv["localisation"] == "monture"]
+            poids_soi      = df_soi["poids_total"].sum()
+            poids_monture  = df_monture["poids_total"].sum()
+            poids_total    = df_inv["poids_total"].sum()
 
-            c1, c2, c3 = st.columns(3)
+            # ── Métriques ──
+            c1, c2, c3, c4 = st.columns(4)
             with c1:
                 st.markdown(f"""<div class="metric-card">
                     <div class="metric-value">{len(df_inv)}</div>
                     <div class="metric-label">Types d'objets</div>
                 </div>""", unsafe_allow_html=True)
             with c2:
+                couleur_poids = "#c0392b" if poids_max > 0 and poids_soi > poids_max else "#b8860b"
                 st.markdown(f"""<div class="metric-card">
-                    <div class="metric-value">{int(nb_objets)}</div>
-                    <div class="metric-label">Objets au total</div>
+                    <div class="metric-value" style="color:{couleur_poids}">{poids_soi:.2f} kg</div>
+                    <div class="metric-label">Sur soi{f" / {poids_max:.1f} kg max" if poids_max > 0 else ""}</div>
                 </div>""", unsafe_allow_html=True)
             with c3:
+                monture_label = monture_actuelle if monture_actuelle != "Aucune" else "—"
+                st.markdown(f"""<div class="metric-card">
+                    <div class="metric-value">{poids_monture:.2f} kg</div>
+                    <div class="metric-label">Sur {monture_label}</div>
+                </div>""", unsafe_allow_html=True)
+            with c4:
                 st.markdown(f"""<div class="metric-card">
                     <div class="metric-value">{poids_total:.2f} kg</div>
-                    <div class="metric-label">Poids porté</div>
+                    <div class="metric-label">Poids total</div>
                 </div>""", unsafe_allow_html=True)
 
             st.markdown("")
 
-            # ── Affichage par catégorie ──
-            categories = sorted(df_inv["categorie"].dropna().unique().tolist())
-            for cat in categories:
-                df_cat = df_inv[df_inv["categorie"] == cat].copy()
-                poids_cat = df_cat["poids_total"].sum()
-                nb_cat = df_cat["quantite"].sum()
+            # ── Affichage Sur soi ──
+            st.markdown("### 🧍 Sur soi")
+            if df_soi.empty:
+                st.caption("Aucun objet porté sur soi.")
+            else:
+                categories_soi = sorted(df_soi["categorie"].dropna().unique().tolist())
+                for cat in categories_soi:
+                    df_cat = df_soi[df_soi["categorie"] == cat].copy()
+                    poids_cat = df_cat["poids_total"].sum()
+                    nb_cat = df_cat["quantite"].sum()
+                    with st.expander(f"⚔️ {cat}  —  {int(nb_cat)} objet(s)  •  {poids_cat:.2f} kg", expanded=True):
+                        st.dataframe(
+                            df_cat[["nom","quantite","poids_kg","poids_total","sous_categorie","notes"]].rename(columns={
+                                "nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)",
+                                "poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie","notes":"Notes"
+                            }),
+                            use_container_width=True, hide_index=True
+                        )
 
-                with st.expander(f"⚔️ {cat}  —  {int(nb_cat)} objet(s)  •  {poids_cat:.2f} kg", expanded=True):
-                    st.dataframe(
-                        df_cat[["nom","quantite","poids_kg","poids_total","sous_categorie","notes"]].rename(columns={
-                            "nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)",
-                            "poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie","notes":"Notes"
-                        }),
-                        use_container_width=True, hide_index=True
-                    )
+            # ── Affichage Sur la monture ──
+            if monture_actuelle != "Aucune":
+                st.markdown(f"### 🐴 Sur la {monture_actuelle}")
+                if df_monture.empty:
+                    st.caption(f"Aucun objet sur la {monture_actuelle}.")
+                else:
+                    categories_mont = sorted(df_monture["categorie"].dropna().unique().tolist())
+                    for cat in categories_mont:
+                        df_cat = df_monture[df_monture["categorie"] == cat].copy()
+                        poids_cat = df_cat["poids_total"].sum()
+                        nb_cat = df_cat["quantite"].sum()
+                        with st.expander(f"⚔️ {cat}  —  {int(nb_cat)} objet(s)  •  {poids_cat:.2f} kg", expanded=True):
+                            st.dataframe(
+                                df_cat[["nom","quantite","poids_kg","poids_total","sous_categorie","notes"]].rename(columns={
+                                    "nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)",
+                                    "poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie","notes":"Notes"
+                                }),
+                                use_container_width=True, hide_index=True
+                            )
 
+            # ── Déplacer / retirer un objet ──
             st.markdown("---")
-            st.markdown("##### Retirer un objet")
-            to_remove = st.selectbox("Objet à retirer", df_inv["nom"].tolist())
-            if st.button("🗑️ Retirer de mon inventaire"):
-                inv_id = int(df_inv[df_inv["nom"] == to_remove]["inv_id"].values[0])
-                execute("DELETE FROM inventaire WHERE id=%s", (inv_id,))
-                invalidate_cache()
-                st.success(f"« {to_remove} » retiré de votre inventaire.")
-                st.rerun()
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("##### 🔀 Déplacer un objet")
+                obj_deplacer = st.selectbox("Objet à déplacer", df_inv["nom"].tolist(), key="j_move")
+                loc_actuelle = df_inv[df_inv["nom"] == obj_deplacer]["localisation"].values[0]
+                nouvelle_loc = "monture" if loc_actuelle == "soi" else "soi"
+                dest_label   = f"➡️ Mettre sur la {monture_actuelle}" if nouvelle_loc == "monture" else "➡️ Mettre sur soi"
+                if monture_actuelle != "Aucune" or nouvelle_loc == "soi":
+                    if st.button(dest_label, key="j_move_btn"):
+                        inv_id = int(df_inv[df_inv["nom"] == obj_deplacer]["inv_id"].values[0])
+                        execute("UPDATE inventaire SET localisation=%s WHERE id=%s", (nouvelle_loc, inv_id))
+                        invalidate_cache()
+                        st.rerun()
+                else:
+                    st.caption("Définissez d'abord une monture dans les paramètres.")
+            with c2:
+                st.markdown("##### 🗑️ Retirer un objet")
+                to_remove = st.selectbox("Objet à retirer", df_inv["nom"].tolist(), key="j_remove")
+                if st.button("🗑️ Retirer de mon inventaire", key="j_remove_btn"):
+                    inv_id = int(df_inv[df_inv["nom"] == to_remove]["inv_id"].values[0])
+                    execute("DELETE FROM inventaire WHERE id=%s", (inv_id,))
+                    invalidate_cache()
+                    st.success(f"« {to_remove} » retiré de votre inventaire.")
+                    st.rerun()
 
     with tab2:
         df = load_equipements()
@@ -651,17 +800,28 @@ def page_joueur():
 
             st.markdown("---")
             st.markdown("##### Ajouter un objet à mon inventaire")
-            eq_list = sorted(filtered["nom"].tolist()) if not filtered.empty else sorted(df["nom"].tolist())
-            chosen_eq = st.selectbox("Choisir l'objet", eq_list, key="jadd_eq")
-            qty = st.number_input("Quantité", min_value=1, max_value=99, value=1, key="jadd_qty")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                eq_list = sorted(filtered["nom"].tolist()) if not filtered.empty else sorted(df["nom"].tolist())
+                chosen_eq = st.selectbox("Choisir l'objet", eq_list, key="jadd_eq")
+            with c2:
+                qty = st.number_input("Quantité", min_value=1, max_value=99, value=1, key="jadd_qty")
+            with c3:
+                pinfo2 = load_player_info(user["id"])
+                monture2 = pinfo2.get("monture") or "Aucune"
+                loc_options = ["soi"] + (["monture"] if monture2 != "Aucune" else [])
+                loc_labels  = ["🧍 Sur soi"] + ([f"🐴 Sur la {monture2}"] if monture2 != "Aucune" else [])
+                loc_choice  = st.selectbox("Ranger où ?", loc_labels, key="jadd_loc")
+                loc_val     = loc_options[loc_labels.index(loc_choice)]
+
             if st.button("➕ Ajouter à mon inventaire"):
                 eq_id = int(df[df["nom"] == chosen_eq]["id"].values[0])
                 execute(
-                    "INSERT INTO inventaire (player_id, equipement_id, quantite) VALUES (%s, %s, %s)",
-                    (user["id"], eq_id, qty)
+                    "INSERT INTO inventaire (player_id, equipement_id, quantite, localisation) VALUES (%s, %s, %s, %s)",
+                    (user["id"], eq_id, qty, loc_val)
                 )
                 invalidate_cache()
-                st.success(f"« {chosen_eq} » (x{qty}) ajouté à votre inventaire !")
+                st.success(f"« {chosen_eq} » (x{qty}) ajouté — {loc_choice} !")
                 st.rerun()
 
 # ─────────────────────────────────────────────
