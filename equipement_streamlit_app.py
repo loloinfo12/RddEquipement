@@ -576,13 +576,22 @@ def page_joueur():
                 </div>""", unsafe_allow_html=True)
 
             st.markdown("")
-            st.dataframe(
-                df_inv[["nom","quantite","poids_kg","poids_total","categorie","notes"]].rename(columns={
-                    "nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)",
-                    "poids_total":"Poids total (kg)","categorie":"Catégorie","notes":"Notes"
-                }),
-                use_container_width=True, hide_index=True
-            )
+
+            # ── Affichage par catégorie ──
+            categories = sorted(df_inv["categorie"].dropna().unique().tolist())
+            for cat in categories:
+                df_cat = df_inv[df_inv["categorie"] == cat].copy()
+                poids_cat = df_cat["poids_total"].sum()
+                nb_cat = df_cat["quantite"].sum()
+
+                with st.expander(f"⚔️ {cat}  —  {int(nb_cat)} objet(s)  •  {poids_cat:.2f} kg", expanded=True):
+                    st.dataframe(
+                        df_cat[["nom","quantite","poids_kg","poids_total","sous_categorie","notes"]].rename(columns={
+                            "nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)",
+                            "poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie","notes":"Notes"
+                        }),
+                        use_container_width=True, hide_index=True
+                    )
 
             st.markdown("---")
             st.markdown("##### Retirer un objet")
