@@ -484,8 +484,22 @@ def page_admin():
             st.markdown("##### Ajouter un objet à l'inventaire")
             df_eq = load_equipements()
             if not df_eq.empty:
-                chosen_eq = st.selectbox("Choisir l'objet", sorted(df_eq["nom"].tolist()), key="admin_add_eq")
-                qty = st.number_input("Quantité", min_value=1, max_value=99, value=1, key="admin_add_qty")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    cats = ["Toutes"] + sorted(df_eq["categorie"].dropna().unique().tolist())
+                    add_cat = st.selectbox("Catégorie", cats, key="admin_add_cat")
+                with c2:
+                    sub_df = df_eq[df_eq["categorie"] == add_cat] if add_cat != "Toutes" else df_eq
+                    sous = ["Toutes"] + sorted(sub_df["sous_categorie"].dropna().unique().tolist())
+                    add_sous = st.selectbox("Sous-catégorie", sous, key="admin_add_sous")
+                with c3:
+                    qty = st.number_input("Quantité", min_value=1, max_value=99, value=1, key="admin_add_qty")
+
+                filtered_eq = df_eq.copy()
+                if add_cat  != "Toutes": filtered_eq = filtered_eq[filtered_eq["categorie"]      == add_cat]
+                if add_sous != "Toutes": filtered_eq = filtered_eq[filtered_eq["sous_categorie"] == add_sous]
+
+                chosen_eq = st.selectbox("Choisir l'objet", sorted(filtered_eq["nom"].tolist()), key="admin_add_eq")
                 if st.button("➕ Ajouter à l'inventaire"):
                     eq_id = int(df_eq[df_eq["nom"] == chosen_eq]["id"].values[0])
                     execute(
