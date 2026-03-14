@@ -68,6 +68,17 @@ h1, h2, h3 {
     border: 1px solid var(--shadow) !important;
     font-family: 'Crimson Text', serif !important;
 }
+.stTextInput > div > div > input::placeholder,
+.stTextArea textarea::placeholder {
+    color: rgba(245, 234, 208, 0.35) !important;
+}
+.stTextInput > div > div > input:focus,
+.stNumberInput input:focus,
+.stTextArea textarea:focus {
+    color: var(--parchment) !important;
+    background: rgba(245, 234, 208, 0.12) !important;
+    border-color: var(--gold) !important;
+}
 .stSidebar {
     background: rgba(10, 5, 2, 0.95) !important;
     border-right: 1px solid var(--gold) !important;
@@ -311,40 +322,78 @@ def page_admin():
                 st.warning("Le nom de l'objet est obligatoire.")
 
         st.markdown("---")
-        st.markdown("#### Importer un fichier CSV")
-        st.caption("Format attendu : Catégorie;Sous-catégorie;Nom;Poids (Kg);Prix (Deniers);Notes")
-        uploaded = st.file_uploader("Choisir un fichier CSV", type=["csv"])
+        st.markdown("#### Importer un fichier CSV ou Excel")
+        st.caption("Format attendu : Catégorie;Sous-catégorie;Nom;Poids (Kg);Prix (Deniers);Notes — tous les onglets seront importés")
+        uploaded = st.file_uploader("Choisir un fichier CSV ou Excel", type=["csv", "xlsx", "xls"])
         if uploaded:
             try:
-                df_import = pd.read_csv(uploaded, sep=";", encoding="latin-1")
                 col_map = {
                     "Catégorie":"categorie","Sous-catégorie":"sous_categorie",
                     "Nom":"nom","Poids (Kg)":"poids_kg","Prix (Deniers)":"prix_deniers","Notes":"notes",
                 }
-                df_import = df_import.rename(columns=col_map)
-                if "poids_kg" in df_import.columns:
-                    df_import["poids_kg"] = df_import["poids_kg"].astype(str).str.replace(",",".").astype(float)
-                if "prix_deniers" in df_import.columns:
-                    df_import["prix_deniers"] = pd.to_numeric(df_import["prix_deniers"], errors="coerce").fillna(0).astype(int)
-                if "notes" in df_import.columns:
-                    df_import["notes"] = df_import["notes"].fillna("").astype(str)
 
-                keep = [c for c in ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes"] if c in df_import.columns]
-                df_import = df_import[keep]
+                # ── Lire toutes les feuilles / le CSV ──
+                filename = uploaded.name.lower()
+                if filename.endswith(".csv"):
+                    sheets = {"Feuille 1": pd.read_csv(uploaded, sep=";", encoding="latin-1")}
+                else:
+                    xls = pd.ExcelFile(uploaded)
+                    sheets = {sheet: xls.parse(sheet) for sheet in xls.sheet_names}
 
-                st.dataframe(df_import.head(10), use_container_width=True)
-                st.caption(f"{len(df_import)} objets détectés")
+                frames = []
+                for sheet_name, df_sheet in sheets.items():
+                    df_sheet = df_sheet.rename(columns=col_map)
+                    # Garder uniquement les colonnes connues
+                    keep_cols = [c for c in ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes"] if c in df_sheet.columns]
+                    if "nom" not in keep_cols:
+                        st.warning(f"Onglet « {sheet_name} » ignoré (colonne 'Nom' introuvable).")
+                        continue
+                    df_sheet = df_sheet[keep_cols].dropna(subset=["nom"])
+                    df_sheet["_onglet"] = sheet_name
+                    frames.append(df_sheet)
 
-                if st.button("📥 Importer dans la base"):
-                    records = [tuple(r[c] for c in keep) for _, r in df_import.iterrows()]
-                    cols_sql = ", ".join(keep)
-                    placeholders = ", ".join(["%s"] * len(keep))
-                    executemany(f"INSERT INTO equipements ({cols_sql}) VALUES ({placeholders})", records)
-                    invalidate_cache()
-                    st.success(f"{len(records)} objets importés avec succès !")
-                    st.rerun()
+                if not frames:
+                    st.error("Aucun onglet valide trouvé dans le fichier.")
+                else:
+                    df_import = pd.concat(frames, ignore_index=True)
+
+                    if "poids_kg" in df_import.columns:
+                        df_import["poids_kg"] = df_import["poids_kg"].astype(str).str.replace(",",".").astype(float)
+                    else:
+                        df_import["poids_kg"] = 0.0
+                    if "prix_deniers" in df_import.columns:
+                        df_import["prix_deniers"] = pd.to_numeric(df_import["prix_deniers"], errors="coerce").fillna(0).astype(int)
+                    else:
+                        df_import["prix_deniers"] = 0
+                    if "notes" in df_import.columns:
+                        df_import["notes"] = df_import["notes"].fillna("").astype(str)
+                    else:
+                        df_import["notes"] = ""
+                    if "categorie" not in df_import.columns:
+                        df_import["categorie"] = df_import["_onglet"]
+                    if "sous_categorie" not in df_import.columns:
+                        df_import["sous_categorie"] = ""
+
+                    df_import = df_import.drop(columns=["_onglet"])
+
+                    # Aperçu par onglet
+                    st.markdown(f"**{len(df_import)} objets détectés** dans {len(frames)} onglet(s)")
+                    st.dataframe(df_import.head(15), use_container_width=True)
+
+                    keep = ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes"]
+                    keep = [c for c in keep if c in df_import.columns]
+
+                    if st.button("📥 Importer tous les onglets dans la base"):
+                        records = [tuple(r[c] for c in keep) for _, r in df_import.iterrows()]
+                        cols_sql = ", ".join(keep)
+                        placeholders = ", ".join(["%s"] * len(keep))
+                        executemany(f"INSERT INTO equipements ({cols_sql}) VALUES ({placeholders})", records)
+                        invalidate_cache()
+                        st.success(f"✅ {len(records)} objets importés avec succès !")
+                        st.rerun()
+
             except Exception as e:
-                st.error(f"Erreur lors de la lecture du CSV : {e}")
+                st.error(f"Erreur lors de la lecture du fichier : {e}")
 
     # ── TAB 3 : Inventaires joueurs ──
     with tab3:
