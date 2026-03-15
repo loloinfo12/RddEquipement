@@ -508,6 +508,67 @@ def rechercher_pixabay(query: str, n: int = 5) -> list[dict]:
         return []
 
 
+def rechercher_europeana(query: str, n: int = 6) -> list[dict]:
+    """Recherche sur Europeana — agrégateur de musées européens, sans clé pour usage basique."""
+    try:
+        resp = requests.get(
+            "https://api.europeana.eu/record/v2/search.json",
+            params={
+                "wskey":   "api2demo",   # clé publique de démo Europeana
+                "query":   query,
+                "qf":      ["TYPE:IMAGE", "RIGHTS:*open*"],
+                "rows":    str(n * 2),
+                "profile": "rich",
+                "sort":    "score desc",
+            },
+            timeout=12
+        )
+        data = resp.json()
+        results = []
+        exclude = {"fox","wolf","dog","cat","bird","flower","portrait",
+                   "landscape","renard","loup","chat","chien","oiseau","person","face"}
+        for item in data.get("items", []):
+            # Récupérer l'URL de l'image (edmIsShownBy ou edmPreview)
+            url = ""
+            for field in ("edmPreview", "edmIsShownBy"):
+                val = item.get(field, [])
+                if isinstance(val, list) and val:
+                    url = val[0]
+                    break
+                elif isinstance(val, str) and val:
+                    url = val
+                    break
+            if not url:
+                continue
+            title = ""
+            for field in ("title", "dcTitleLangAware", "dcDescription"):
+                val = item.get(field, [])
+                if isinstance(val, list) and val:
+                    title = str(val[0])
+                    break
+                elif isinstance(val, str) and val:
+                    title = val
+                    break
+            title_low = title.lower()
+            if any(w in title_low for w in exclude):
+                continue
+            provider = ""
+            prov_val = item.get("dataProvider", [])
+            if isinstance(prov_val, list) and prov_val:
+                provider = prov_val[0]
+            results.append({
+                "source": f"Europeana — {provider}"[:40] if provider else "Europeana",
+                "title":  title[:60] or query,
+                "url":    url,
+                "page_url": item.get("guid", ""),
+            })
+            if len(results) >= n:
+                break
+        return results
+    except Exception:
+        return []
+
+
 def rechercher_met_museum(query: str, n: int = 6) -> list[dict]:
     """Recherche dans la collection du Metropolitan Museum of Art (API publique, sans clé)."""
     try:
@@ -712,17 +773,20 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
             search_key = f"img_search_{key_prefix}_{eq_id}"
             if st.button("🔍 Rechercher des illustrations", key=f"btn_search_{key_prefix}_{eq_id}"):
                 query_fr, query_en = _build_queries(nom, sous_cat, notes)
-                with st.spinner("Recherche en cours sur Met Museum, Wikimedia, Pixabay, Openverse..."):
+                with st.spinner("Recherche en cours sur Met Museum, Europeana, Wikimedia, Pixabay..."):
                     results = []
-                    # Met Museum (EN uniquement, collection d'armes historiques)
-                    results += rechercher_met_museum(query_en, n=5)
-                    # Wikimedia Commons (FR + EN)
-                    results += rechercher_wikimedia(query_fr, n=4)
-                    results += rechercher_wikimedia(query_en, n=4)
+                    # Met Museum — photos qualité musée d'armes historiques
+                    results += rechercher_met_museum(query_en, n=6)
+                    # Europeana — musées européens, armes médiévales
+                    results += rechercher_europeana(query_en, n=6)
+                    results += rechercher_europeana(query_fr, n=4)
+                    # Wikimedia Commons (FR + EN) — MediaSearch plein texte
+                    results += rechercher_wikimedia(query_fr, n=5)
+                    results += rechercher_wikimedia(query_en, n=5)
                     # Pixabay (EN — illustrations et photos)
-                    results += rechercher_pixabay(query_en, n=4)
+                    results += rechercher_pixabay(query_en, n=5)
                     # Openverse (EN)
-                    results += rechercher_openverse(query_en, n=3)
+                    results += rechercher_openverse(query_en, n=4)
                     # Dédoublonnage par URL
                     seen, unique = set(), []
                     for r in results:
@@ -736,9 +800,9 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
             results = st.session_state.get(search_key, [])
             if results:
                 st.markdown(f"**{len(results)} résultats trouvés** — cliquez sur une image pour la sélectionner :")
-                cols = st.columns(3)
+                cols = st.columns(4)
                 for idx, item in enumerate(results):
-                    with cols[idx % 3]:
+                    with cols[idx % 4]:
                         st.image(item["url"], caption=f"{item['source']}", use_container_width=True)
                         if st.button("✅ Choisir", key=f"pick_{key_prefix}_{eq_id}_{idx}"):
                             with st.spinner("Téléchargement en cours..."):
