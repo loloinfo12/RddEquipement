@@ -345,13 +345,13 @@ NOM_EN = {
     "Thanatosienne": "war scythe polearm peasant blade",
     "Urticante": "morning star polearm spiked ball staff",
     # Arbalètes
-    "Arbalète à répétition": "repeating crossbow medieval automatic",
-    "Arbalète deux-gnomes": "heavy crossbow large long range siege",
-    "Arbalète miséricorde": "military crossbow medieval stirrup",
-    "Arbalète oliphante": "ballista wall mounted siege crossbow",
-    "Arbalète vide": "light crossbow medieval simple",
-    "Baliste ogre": "giant ballista siege weapon",
-    "Engrenarbalète": "ratchet crossbow heavy windlass",
+    "Arbalète à répétition": "repeating crossbow automatic medieval arbalest",
+    "Arbalète deux-gnomes": "heavy crossbow large siege medieval arbalest",
+    "Arbalète miséricorde": "military crossbow stirrup medieval arbalest",
+    "Arbalète oliphante": "ballista siege crossbow wall mounted medieval",
+    "Arbalète vide": "light crossbow simple medieval arbalest bolt",
+    "Baliste ogre": "ballista giant siege engine medieval trebuchet",
+    "Engrenarbalète": "windlass crossbow ratchet heavy medieval arbalest",
     # Arcs
     "Arc à poulie": "compound bow pulley modern",
     "Arc corsican": "recurve bow medieval compact",
@@ -466,44 +466,90 @@ def rechercher_wikimedia(query: str, n: int = 6) -> list[dict]:
         return []
 
 
-def rechercher_pixabay(query: str, n: int = 5) -> list[dict]:
-    """Recherche sur Pixabay — nécessite PIXABAY_API_KEY dans secrets."""
+def rechercher_pixabay(query: str, n: int = 6) -> list[dict]:
+    """Recherche sur Pixabay — photos, illustrations et vecteurs."""
     try:
         key = st.secrets.get("PIXABAY_API_KEY", "")
         if not key:
             return []
         results = []
-        # Double recherche : illustration puis photo, on prend le meilleur des deux
-        for img_type in ["illustration", "photo"]:
+        seen_urls = set()
+        for img_type in ["all", "illustration", "photo"]:
             resp = requests.get(
                 "https://pixabay.com/api/",
                 params={
-                    "key": key,
-                    "q": query,
+                    "key":        key,
+                    "q":          query,
                     "image_type": img_type,
-                    "per_page": str(n),
+                    "per_page":   str(n),
                     "safesearch": "true",
-                    "lang": "en",
-                    "order": "relevant",
+                    "lang":       "en",
+                    "order":      "relevant",
                 },
                 timeout=10
             )
             data = resp.json()
             for hit in data.get("hits", []):
-                # Filtrage strict : les tags Pixabay doivent contenir au moins un mot de la query
                 tags = hit.get("tags", "").lower()
                 query_words = [w for w in query.lower().split() if len(w) > 3]
-                if not any(w in tags for w in query_words):
+                # Filtrage souple : au moins UN mot-clé dans les tags
+                if query_words and not any(w in tags for w in query_words):
                     continue
                 url = hit.get("webformatURL", "")
-                if url:
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    type_label = hit.get("type", img_type)
                     results.append({
-                        "source": f"Pixabay ({img_type})",
-                        "title": hit.get("tags", query)[:60],
-                        "url": url,
+                        "source": f"Pixabay ({type_label})",
+                        "title":  hit.get("tags", query)[:60],
+                        "url":    url,
                         "page_url": hit.get("pageURL", ""),
                     })
-        return results[:n]
+            if len(results) >= n * 2:
+                break
+        return results[:n * 2]
+    except Exception:
+        return []
+
+
+def rechercher_rijksmuseum(query: str, n: int = 6) -> list[dict]:
+    """Recherche dans la collection du Rijksmuseum (Amsterdam) — API publique gratuite."""
+    try:
+        key = st.secrets.get("RIJKSMUSEUM_API_KEY", "0fiuZFh4")  # clé démo publique
+        resp = requests.get(
+            "https://www.rijksmuseum.nl/api/en/collection",
+            params={
+                "key":        key,
+                "q":          query,
+                "imgonly":    "True",
+                "ps":         str(n * 2),
+                "type":       "sword|dagger|axe|crossbow|bow|lance|spear|mace|pistol|musket|rifle|armor|armour|weapon",
+            },
+            timeout=12
+        )
+        data = resp.json()
+        results = []
+        for item in data.get("artObjects", []):
+            web_img = item.get("webImage", {})
+            url = web_img.get("url", "")
+            if not url:
+                continue
+            # Forcer HTTPS et taille raisonnable
+            url = url.replace("http://", "https://")
+            if "=s" not in url:
+                url += "=s400"
+            title = item.get("title", query)
+            maker = item.get("principalOrFirstMaker", "")
+            date  = item.get("dating", {}).get("presentingDate", "")
+            results.append({
+                "source": "Rijksmuseum",
+                "title":  f"{title} — {maker} {date}".strip()[:60],
+                "url":    url,
+                "page_url": item.get("links", {}).get("web", ""),
+            })
+            if len(results) >= n:
+                break
+        return results
     except Exception:
         return []
 
@@ -626,9 +672,10 @@ def rechercher_openverse(query: str, n: int = 4) -> list[dict]:
         resp = requests.get(
             "https://api.openverse.org/v1/images/",
             params={
-                "q": query, "page_size": str(n * 2),
-                "license_type": "commercial,modification",
-                "mature": "false",
+                "q":         query,
+                "page_size": str(n * 2),
+                "mature":    "false",
+                # Toutes licences ouvertes : CC + domaine public
             },
             headers={"User-Agent": "RDD-App/1.0"},
             timeout=10
@@ -773,20 +820,28 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
             search_key = f"img_search_{key_prefix}_{eq_id}"
             if st.button("🔍 Rechercher des illustrations", key=f"btn_search_{key_prefix}_{eq_id}"):
                 query_fr, query_en = _build_queries(nom, sous_cat, notes)
-                with st.spinner("Recherche en cours sur Met Museum, Europeana, Wikimedia, Pixabay..."):
+                sources_status = {}
+                with st.spinner("Recherche en cours sur 6 sources..."):
                     results = []
-                    # Met Museum — photos qualité musée d'armes historiques
-                    results += rechercher_met_museum(query_en, n=6)
-                    # Europeana — musées européens, armes médiévales
-                    results += rechercher_europeana(query_en, n=6)
-                    results += rechercher_europeana(query_fr, n=4)
-                    # Wikimedia Commons (FR + EN) — MediaSearch plein texte
-                    results += rechercher_wikimedia(query_fr, n=5)
-                    results += rechercher_wikimedia(query_en, n=5)
-                    # Pixabay (EN — illustrations et photos)
-                    results += rechercher_pixabay(query_en, n=5)
-                    # Openverse (EN)
-                    results += rechercher_openverse(query_en, n=4)
+
+                    def _fetch(fn, *args, label="", **kwargs):
+                        try:
+                            r = fn(*args, **kwargs)
+                            sources_status[label] = len(r)
+                            return r
+                        except Exception as e:
+                            sources_status[label] = f"❌ {e}"
+                            return []
+
+                    results += _fetch(rechercher_met_museum,  query_en, n=6,  label="Met Museum")
+                    results += _fetch(rechercher_rijksmuseum, query_en, n=6,  label="Rijksmuseum")
+                    results += _fetch(rechercher_europeana,   query_en, n=5,  label="Europeana EN")
+                    results += _fetch(rechercher_europeana,   query_fr, n=4,  label="Europeana FR")
+                    results += _fetch(rechercher_wikimedia,   query_fr, n=5,  label="Wikimedia FR")
+                    results += _fetch(rechercher_wikimedia,   query_en, n=5,  label="Wikimedia EN")
+                    results += _fetch(rechercher_pixabay,     query_en, n=6,  label="Pixabay")
+                    results += _fetch(rechercher_openverse,   query_en, n=4,  label="Openverse")
+
                     # Dédoublonnage par URL
                     seen, unique = set(), []
                     for r in results:
@@ -794,6 +849,12 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
                             seen.add(r["url"])
                             unique.append(r)
                     results = unique
+
+                # Afficher le statut des sources dans un expander discret
+                with st.expander("📡 Détail des sources", expanded=False):
+                    for src, count in sources_status.items():
+                        icon = "✅" if isinstance(count, int) else "⚠️"
+                        st.caption(f"{icon} **{src}** : {count} résultat(s)" if isinstance(count, int) else f"{icon} **{src}** : {count}")
                 st.session_state[search_key] = results
 
             # Afficher la galerie si des résultats sont en session
