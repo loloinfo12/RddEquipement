@@ -286,25 +286,124 @@ MONTURES = ["Aucune", "Cheval", "Mule / Âne", "Charrette", "Aligate", "Autre"]
 #  RECHERCHE D'IMAGES (MULTI-SOURCE)
 # ─────────────────────────────────────────────
 
+# Traductions précises nom → mots-clés anglais pour les armes connues
+NOM_EN = {
+    # Épées
+    "Epée gnome": "short sword gnome dagger medieval",
+    "Esparlongue": "estoc thrusting sword medieval slender blade",
+    "Epée cyane": "curved blue steel sword fantasy",
+    "Epée dragonne": "longsword medieval one hand sword",
+    "Epée sorde": "broad sword short medieval guard soldier",
+    "Epée bâtarde": "bastard sword hand and a half medieval",
+    "Double dragonne": "two handed great sword zweihander medieval",
+    # Haches
+    "Ailes de wyvern": "double bladed battle axe two handed wyvern wings",
+    "Cognée gnome": "gnome hand axe short hatchet",
+    "Crapaudine": "hammer axe military pick medieval",
+    "Hache corbaque": "beaked axe crow pick medieval",
+    "Hache de Rien": "barbarian heavy axe medieval",
+    "Lochabre de bévier": "lochaber axe poleaxe long handle",
+    "Pierreuse": "stone maul prehistoric giant club",
+    # Masses
+    "Badine": "thin flexible rod switch cane",
+    "Bâton ogre": "iron shod staff walking stick ogre",
+    "Berger du voleur": "blackjack sap leather club",
+    "Grouine": "spiked club improvised weapon",
+    "Masse de Peton-léger": "flanged mace medieval light",
+    "Massepain": "two handed maul war hammer heavy",
+    "Shokarde": "obsidian club macuahuitl",
+    # Dagues
+    "Dague araignée": "damascus steel dagger spider pattern blade",
+    "Dague Gurkh": "kukri curved blade knife",
+    "Dague pantomarde": "medieval fighting dagger rondel",
+    "Ecorcheur": "hunting knife skinner blade thick",
+    "Paradigne": "parrying dagger ornate medieval",
+    "Senestre": "main gauche parrying dagger left hand",
+    "Thanataire": "stiletto assassin thin blade",
+    # Fléaux
+    "Battefoin": "flail peasant threshing weapon medieval",
+    "Bilboquet": "ball and cup wooden toy weapon",
+    "Flageline": "gnome chain flail small barbed",
+    "Fléau d'Antinéar": "war flail military morning star",
+    "Gueuse": "single ball flail chain mace",
+    "Massacrante": "multi chain barbed flail two handed",
+    "Sagouine": "three chain hook flail medieval",
+    # Lances
+    "Cornicochonne": "boar spear hunting crossguard",
+    "Javelot saure": "stone tipped javelin primitive throwing spear",
+    "Lance cavale": "cavalry lance jousting knight",
+    "Lance cynoférox": "fork polearm catching pole",
+    "Lance souple": "light spear flexible shaft",
+    "Pilum stoliciste": "pilum roman javelin heavy",
+    "Sourdine": "pike infantry long pike phalanx",
+    # Armes d'hast
+    "Hallebarde chuiche": "halberd decorated ornate polearm",
+    "Hastagrave": "voulge glaive polearm blade",
+    "Lance olisienne": "naginata long sword staff polearm",
+    "Pique-bedaine": "ranseur spetum polearm fork",
+    "Pointe sagace": "partisan polearm simple spear",
+    "Thanatosienne": "war scythe polearm peasant blade",
+    "Urticante": "morning star polearm spiked ball staff",
+    # Arbalètes
+    "Arbalète à répétition": "repeating crossbow medieval automatic",
+    "Arbalète deux-gnomes": "heavy crossbow large long range siege",
+    "Arbalète miséricorde": "military crossbow medieval stirrup",
+    "Arbalète oliphante": "ballista wall mounted siege crossbow",
+    "Arbalète vide": "light crossbow medieval simple",
+    "Baliste ogre": "giant ballista siege weapon",
+    "Engrenarbalète": "ratchet crossbow heavy windlass",
+    # Arcs
+    "Arc à poulie": "compound bow pulley modern",
+    "Arc corsican": "recurve bow medieval compact",
+    "Arc fourreux": "selfbow yew simple hunting bow",
+    "Arc hurleur": "horse bow cavalry short recurve",
+    "Arc logotique": "bone bow composite necromancer",
+    "Arc longus": "english longbow war bow",
+    "Arc méandre": "great bow double curve composite horn",
+    # Armes de poing
+    "Boutefeu": "flare gun single shot pistol",
+    "Dézingueur": "automatic pistol gnome steampunk",
+    "Fée Carabosse": "needle gun crystal dart pistol steampunk",
+    "Mulard": "double barrel pistol break action",
+    "Ordonnancier": "revolver six shot gnome pistol",
+    "Revolver Nikriket": "derringer small pocket pistol",
+    "Squatter Gueunze": "sawn off shotgun pistol grapeshot",
+    # Armes d'épaule
+    "Espingole": "blunderbuss flintlock musket",
+    "Fromager": "drum magazine automatic rifle steampunk",
+    "Fusil à oliphant": "elephant gun large caliber rifle",
+    "Fusil astrologue": "pepperbox revolving rifle multi barrel",
+    "Fusil cyan": "long rifle sniper precision musket",
+    "Fusil-ballon": "rubber ball gun non lethal rifle",
+    "Tromblon": "gnome blunderbuss flared muzzle musket",
+}
+
 def _build_queries(nom: str, sous_categorie: str, notes: str) -> tuple[str, str]:
-    """Retourne (query_fr, query_en) pour la recherche multi-langue."""
+    """Retourne (query_fr, query_en) optimisées pour chaque arme."""
     cat_en = {
-        "Épées": "sword", "Haches": "axe", "Masses": "mace club",
-        "Dagues": "dagger knife", "Fléaux": "flail", "Lances": "spear lance",
-        "Armes d'hast": "polearm halberd", "Arbalètes": "crossbow",
-        "Arcs": "bow archery", "Armes de poing": "pistol", "Armes d'épaule": "rifle musket",
+        "Épées": "sword medieval", "Haches": "axe medieval", "Masses": "mace club medieval",
+        "Dagues": "dagger knife medieval", "Fléaux": "flail medieval", "Lances": "spear medieval",
+        "Armes d'hast": "polearm halberd", "Arbalètes": "crossbow medieval",
+        "Arcs": "bow medieval", "Armes de poing": "pistol flintlock", "Armes d'épaule": "musket rifle",
     }
     cat_fr = {
-        "Épées": "épée", "Haches": "hache", "Masses": "masse massue",
-        "Dagues": "dague couteau", "Fléaux": "fléau", "Lances": "lance épieu",
-        "Armes d'hast": "hallebarde pertuisane", "Arbalètes": "arbalète",
-        "Arcs": "arc archerie", "Armes de poing": "pistolet", "Armes d'épaule": "fusil mousquet",
+        "Épées": "épée médiévale", "Haches": "hache médiévale", "Masses": "masse arme médiévale",
+        "Dagues": "dague médiévale", "Fléaux": "fléau médiéval", "Lances": "lance médiévale",
+        "Armes d'hast": "hallebarde arme d'hast", "Arbalètes": "arbalète médiévale",
+        "Arcs": "arc médiéval", "Armes de poing": "pistolet ancien", "Armes d'épaule": "fusil ancien mousquet",
     }
-    base_en = cat_en.get(sous_categorie, sous_categorie)
-    base_fr = cat_fr.get(sous_categorie, sous_categorie)
+    # Utiliser les mots-clés spécifiques si disponibles
+    specific_en = NOM_EN.get(nom, "")
+    base_en = cat_en.get(sous_categorie, "weapon")
+    base_fr = cat_fr.get(sous_categorie, "arme")
 
-    query_en = f"medieval {nom} {base_en} weapon fantasy"
-    query_fr = f"médiéval {nom} {base_fr} arme"
+    if specific_en:
+        query_en = specific_en
+        query_fr = f"{nom} {base_fr}"
+    else:
+        query_en = f"medieval {nom} {base_en}"
+        query_fr = f"{nom} {base_fr}"
+
     return query_fr, query_en
 
 
