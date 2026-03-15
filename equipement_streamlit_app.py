@@ -4,6 +4,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import hashlib
 from contextlib import contextmanager
+import requests
+import re
 
 # ─────────────────────────────────────────────
 #  CONFIG
@@ -241,7 +243,7 @@ def login(username: str, password: str):
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=30)
 def load_equipements() -> pd.DataFrame:
-    rows = query("SELECT * FROM equipements ORDER BY categorie, sous_categorie, nom")
+    rows = query("""SELECT id, categorie, sous_categorie, nom, poids_kg, prix_deniers, notes, degats, mains, force_requise, resistance, m_distance, portee_max, magasin, tir_rechargement, svg_illustration FROM equipements ORDER BY categorie, sous_categorie, nom""")
     return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
 
 @st.cache_data(ttl=30)
@@ -278,6 +280,90 @@ def invalidate_cache():
 MONTURES = ["Aucune", "Cheval", "Mule / Âne", "Charrette", "Aligate", "Autre"]
 
 # ─────────────────────────────────────────────
+#  GÉNÉRATION SVG VIA API CLAUDE
+# ─────────────────────────────────────────────
+def generer_svg_arme(nom: str, sous_categorie: str, notes: str, degats: str = "") -> str | None:
+    """Appelle l'API Claude pour générer un SVG illustrant l'arme."""
+    prompt = f"""Tu es un illustrateur médiéval spécialisé dans les armes fantasy.
+Crée un SVG 300×400 illustrant cette arme de manière artistique, dans un style gravure médiévale sur parchemin.
+
+Arme : {nom}
+Catégorie : {sous_categorie}
+Description : {notes}
+Dégâts : {degats or "non précisé"}
+
+Règles strictes :
+- SVG viewBox="0 0 300 400", fond transparent
+- Style : trait fin noir/sépia (#2c1a0e), hachures, ombres dessinées à la main
+- L'arme doit occuper 70% de l'espace, centrée, légèrement en diagonale
+- Ajoute de petits détails décoratifs (runes, motifs) cohérents avec la description
+- En bas : le nom en petites capitales, police serif, couleur #b8860b
+- PAS de texte descriptif, PAS de fond coloré plein
+- Renvoie UNIQUEMENT le code SVG brut, sans balise markdown, sans explication"""
+
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"Content-Type": "application/json"},
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 4000,
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            timeout=60
+        )
+        data = resp.json()
+        text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+        match = re.search(r'(<svg[\s\S]*?</svg>)', text, re.IGNORECASE)
+        return match.group(1) if match else text.strip()
+    except Exception as e:
+        st.error(f"Erreur API : {e}")
+        return None
+
+
+def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: str = ""):
+    """Affiche l'expander avec illustration SVG pour une arme."""
+    nom      = str(row.get("nom", ""))
+    svg      = row.get("svg_illustration", "") or ""
+    sous_cat = str(row.get("sous_categorie", ""))
+    notes    = str(row.get("notes", "") or "")
+    degats   = str(row.get("degats", "") or "")
+    eq_id    = row.get("id", None)
+
+    icon  = "🖼️" if svg and svg.strip().startswith("<svg") else "✦"
+    label = f"{icon} {nom}"
+
+    with st.expander(label):
+        if svg and svg.strip().startswith("<svg"):
+            st.markdown(f"""
+            <div style="
+                border: 2px solid #b8860b;
+                border-radius: 6px;
+                padding: 12px;
+                background: rgba(245,234,208,0.06);
+                display: flex;
+                justify-content: center;
+            ">{svg}</div>
+            """, unsafe_allow_html=True)
+        else:
+            st.caption("Aucune illustration générée pour cette arme.")
+
+        if is_admin and eq_id is not None:
+            btn_label = "🎨 Regénérer l'illustration" if svg else "🎨 Générer l'illustration"
+            if st.button(btn_label, key=f"gen_svg_{key_prefix}_{eq_id}"):
+                with st.spinner(f"Illustration de « {nom} » en cours..."):
+                    nouveau_svg = generer_svg_arme(nom, sous_cat, notes, degats)
+                if nouveau_svg:
+                    execute("UPDATE equipements SET svg_illustration=%s WHERE id=%s",
+                            (nouveau_svg, int(eq_id)))
+                    invalidate_cache()
+                    st.success("Illustration sauvegardée !")
+                    st.rerun()
+                else:
+                    st.error("La génération a échoué.")
+
+
+# ─────────────────────────────────────────────
 #  HELPERS D'AFFICHAGE DU CATALOGUE
 # ─────────────────────────────────────────────
 def _cols_display_melee(df: pd.DataFrame) -> tuple[list, dict]:
@@ -307,8 +393,8 @@ def _cols_display_tir(df: pd.DataFrame) -> tuple[list, dict]:
     }
     return cols, rename
 
-def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat"):
-    """Widget de catalogue filtrable avec onglets mêlée / tir."""
+def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat", is_admin: bool = False):
+    """Widget de catalogue filtrable avec onglets mêlée / tir et illustrations."""
     if df.empty:
         st.info("Le catalogue est vide.")
         return
@@ -331,26 +417,36 @@ def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat"):
 
     st.markdown(f"**{len(filtered)}** objet(s) trouvé(s)")
 
-    # Séparer mêlée / tir
-    mask_tir  = filtered["sous_categorie"].apply(is_tir) if "sous_categorie" in filtered.columns else pd.Series(False, index=filtered.index)
-    df_melee  = filtered[~mask_tir]
-    df_tir    = filtered[mask_tir]
+    mask_tir = filtered["sous_categorie"].apply(is_tir) if "sous_categorie" in filtered.columns else pd.Series(False, index=filtered.index)
+    df_melee = filtered[~mask_tir]
+    df_tir   = filtered[mask_tir]
 
     tab_melee, tab_tir = st.tabs([f"⚔️ Armes de mêlée ({len(df_melee)})", f"🏹 Armes de tir ({len(df_tir)})"])
 
+    def _render_section(df_section, cols_fn, tab_prefix):
+        if df_section.empty:
+            st.caption("Aucune arme dans cette sélection.")
+            return
+        cols, rename = cols_fn(df_section)
+        st.dataframe(df_section[cols].rename(columns=rename), use_container_width=True, hide_index=True)
+        st.markdown("#### 🖼️ Illustrations")
+        rows_list = [df_section.iloc[i] for i in range(len(df_section))]
+        for i in range(0, len(rows_list), 3):
+            grid_cols = st.columns(3)
+            for j, col in enumerate(grid_cols):
+                if i + j < len(rows_list):
+                    with col:
+                        afficher_illustration(
+                            rows_list[i + j],
+                            is_admin=is_admin,
+                            key_prefix=f"{tab_prefix}_{i+j}"
+                        )
+
     with tab_melee:
-        if df_melee.empty:
-            st.caption("Aucune arme de mêlée dans cette sélection.")
-        else:
-            cols, rename = _cols_display_melee(df_melee)
-            st.dataframe(df_melee[cols].rename(columns=rename), use_container_width=True, hide_index=True)
+        _render_section(df_melee, _cols_display_melee, f"{key_prefix}_mel")
 
     with tab_tir:
-        if df_tir.empty:
-            st.caption("Aucune arme de tir dans cette sélection.")
-        else:
-            cols, rename = _cols_display_tir(df_tir)
-            st.dataframe(df_tir[cols].rename(columns=rename), use_container_width=True, hide_index=True)
+        _render_section(df_tir, _cols_display_tir, f"{key_prefix}_tir")
 
 # ─────────────────────────────────────────────
 #  SESSION STATE
@@ -399,7 +495,7 @@ def page_admin():
     # ── TAB 1 : Catalogue ──
     with tab1:
         df = load_equipements()
-        afficher_catalogue(df, key_prefix="admin_cat")
+        afficher_catalogue(df, key_prefix="admin_cat", is_admin=True)
 
         st.markdown("---")
         st.markdown("##### ✏️ Modifier les stats d'une arme")
