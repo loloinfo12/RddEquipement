@@ -289,9 +289,29 @@ def image_vers_base64(uploaded_file) -> str | None:
     """Convertit un fichier uploadé Streamlit en data-URI base64."""
     try:
         import base64
-        data  = uploaded_file.read()
-        mime  = uploaded_file.type or "image/jpeg"
-        b64   = base64.b64encode(data).decode()
+        data = uploaded_file.read()
+        mime = uploaded_file.type or "image/jpeg"
+        b64  = base64.b64encode(data).decode()
+        return f"data:{mime};base64,{b64}"
+    except Exception:
+        return None
+
+
+def telecharger_url_base64(url: str) -> str | None:
+    """Télécharge une image depuis une URL et retourne un data-URI base64."""
+    try:
+        import base64
+        resp = requests.get(
+            url, timeout=15,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; RDD-App/1.0)"},
+            allow_redirects=True
+        )
+        if resp.status_code != 200:
+            return None
+        mime = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+        if not mime.startswith("image/"):
+            mime = "image/jpeg"
+        b64 = base64.b64encode(resp.content).decode()
         return f"data:{mime};base64,{b64}"
     except Exception:
         return None
@@ -393,32 +413,64 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
         else:
             st.caption("Aucune illustration pour cette arme.")
 
-        # ── ADMIN : upload drag & drop ──
+        # ── ADMIN : ajout d'illustration ──
         if is_admin and eq_id is not None:
             st.markdown("---")
-            uploaded = st.file_uploader(
-                "🖼️ Glissez-déposez ou choisissez une image",
-                type=["png", "jpg", "jpeg", "webp", "gif", "svg"],
-                key=f"upload_{key_prefix}_{eq_id}",
-                help="PNG, JPG, WEBP, GIF ou SVG — sera stocké en base"
+
+            method = st.radio(
+                "Ajouter une illustration",
+                ["🔗 Coller une URL", "📂 Upload fichier"],
+                horizontal=True,
+                key=f"method_{key_prefix}_{eq_id}"
             )
-            if uploaded is not None:
-                # Aperçu immédiat
-                st.image(uploaded, caption="Aperçu", width=200)
-                if st.button("✅ Valider cette image", key=f"save_img_{key_prefix}_{eq_id}"):
-                    if uploaded.type == "image/svg+xml":
-                        # SVG : stocker le texte brut
-                        svg_text = uploaded.read().decode("utf-8", errors="ignore")
-                        execute("UPDATE equipements SET svg_illustration=%s WHERE id=%s",
-                                (svg_text, int(eq_id)))
-                    else:
-                        b64 = image_vers_base64(uploaded)
-                        if b64:
+
+            # ── Option 1 : URL (clic droit → Copier l'adresse de l'image) ──
+            if method == "🔗 Coller une URL":
+                st.caption("Clic droit sur n'importe quelle image dans votre navigateur → **Copier l'adresse de l'image** → coller ici")
+                url_input = st.text_input(
+                    "URL de l'image",
+                    placeholder="https://...",
+                    key=f"url_{key_prefix}_{eq_id}"
+                )
+                if url_input and url_input.startswith("http"):
+                    try:
+                        st.image(url_input, caption="Aperçu", width=250)
+                        if st.button("✅ Valider cette image", key=f"save_url_{key_prefix}_{eq_id}"):
+                            with st.spinner("Téléchargement..."):
+                                b64 = telecharger_url_base64(url_input)
+                            if b64:
+                                execute("UPDATE equipements SET svg_illustration=%s WHERE id=%s",
+                                        (b64, int(eq_id)))
+                                invalidate_cache()
+                                st.success(f"Illustration de « {nom} » sauvegardée !")
+                                st.rerun()
+                            else:
+                                st.error("Impossible de télécharger cette image. Essayez de la sauvegarder puis d'uploader le fichier.")
+                    except Exception:
+                        st.warning("URL invalide ou image inaccessible.")
+
+            # ── Option 2 : upload fichier classique ──
+            else:
+                uploaded = st.file_uploader(
+                    "Glissez-déposez ou choisissez un fichier",
+                    type=["png", "jpg", "jpeg", "webp", "gif", "svg"],
+                    key=f"upload_{key_prefix}_{eq_id}",
+                )
+                if uploaded is not None:
+                    st.image(uploaded, caption="Aperçu", width=250)
+                    if st.button("✅ Valider cette image", key=f"save_img_{key_prefix}_{eq_id}"):
+                        if uploaded.type == "image/svg+xml":
+                            svg_text = uploaded.read().decode("utf-8", errors="ignore")
                             execute("UPDATE equipements SET svg_illustration=%s WHERE id=%s",
-                                    (b64, int(eq_id)))
-                    invalidate_cache()
-                    st.success(f"Illustration de « {nom} » sauvegardée !")
-                    st.rerun()
+                                    (svg_text, int(eq_id)))
+                        else:
+                            b64 = image_vers_base64(uploaded)
+                            if b64:
+                                execute("UPDATE equipements SET svg_illustration=%s WHERE id=%s",
+                                        (b64, int(eq_id)))
+                        invalidate_cache()
+                        st.success(f"Illustration de « {nom} » sauvegardée !")
+                        st.rerun()
 
             st.markdown("")
             # Génération SVG par Claude (option secondaire)
