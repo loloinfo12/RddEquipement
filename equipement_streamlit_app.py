@@ -407,32 +407,60 @@ def _build_queries(nom: str, sous_categorie: str, notes: str) -> tuple[str, str]
     return query_fr, query_en
 
 
-def rechercher_wikimedia(query: str, n: int = 5) -> list[dict]:
-    """Recherche sur Wikimedia Commons — sans clé API."""
+def rechercher_wikimedia(query: str, n: int = 6) -> list[dict]:
+    """Recherche sur Wikimedia Commons via l'API MediaSearch (plein texte, descriptions, catégories)."""
     try:
         resp = requests.get(
             "https://commons.wikimedia.org/w/api.php",
             params={
-                "action": "query", "format": "json", "generator": "search",
-                "gsrnamespace": "6", "gsrsearch": query, "gsrlimit": str(n),
-                "prop": "imageinfo", "iiprop": "url|mime|size",
+                "action":   "query",
+                "format":   "json",
+                "list":     "search",
+                "srnamespace": "6",          # namespace File
+                "srsearch": query,
+                "srlimit":  str(n * 3),
+                "srprop":   "snippet|titlesnippet",
+            },
+            timeout=12
+        )
+        ids = [str(p["pageid"]) for p in resp.json().get("query", {}).get("search", [])]
+        if not ids:
+            return []
+
+        # Récupérer les URLs des miniatures pour les IDs trouvés
+        info_resp = requests.get(
+            "https://commons.wikimedia.org/w/api.php",
+            params={
+                "action":  "query",
+                "format":  "json",
+                "pageids": "|".join(ids[:n * 2]),
+                "prop":    "imageinfo",
+                "iiprop":  "url|mime|thumburl",
                 "iiurlwidth": "400",
             },
-            timeout=10
+            timeout=12
         )
-        data = resp.json()
         results = []
-        for page in data.get("query", {}).get("pages", {}).values():
-            ii = page.get("imageinfo", [{}])[0]
-            url = ii.get("thumburl") or ii.get("url", "")
-            mime = ii.get("mime", "")
-            if url and mime.startswith("image/"):
-                results.append({
-                    "source": "Wikimedia Commons",
-                    "title": page.get("title", "").replace("File:", ""),
-                    "url": url,
-                    "page_url": f"https://commons.wikimedia.org/wiki/{page.get('title','').replace(' ','_')}",
-                })
+        exclude = {"fox","wolf","dog","cat","bird","eagle","flower","portrait",
+                   "landscape","tree","renard","loup","chat","chien","oiseau"}
+        for page in info_resp.json().get("query", {}).get("pages", {}).values():
+            ii        = page.get("imageinfo", [{}])[0]
+            url       = ii.get("thumburl") or ii.get("url", "")
+            mime      = ii.get("mime", "")
+            title_raw = page.get("title", "").replace("File:", "")
+            title_low = title_raw.lower()
+            if not url or not mime.startswith("image/"):
+                continue
+            if any(w in title_low for w in exclude):
+                continue
+            results.append({
+                "source": "Wikimedia Commons",
+                "title":  title_raw[:60],
+                "url":    url,
+                "page_url": f"https://commons.wikimedia.org/wiki/{page.get('title','').replace(' ','_')}",
+            })
+            if len(results) >= n:
+                break
         return results
     except Exception:
         return []
@@ -444,49 +472,129 @@ def rechercher_pixabay(query: str, n: int = 5) -> list[dict]:
         key = st.secrets.get("PIXABAY_API_KEY", "")
         if not key:
             return []
-        resp = requests.get(
-            "https://pixabay.com/api/",
-            params={
-                "key": key, "q": query, "image_type": "illustration,vector",
-                "category": "backgrounds,science", "per_page": str(n),
-                "safesearch": "true", "lang": "en",
-            },
-            timeout=10
-        )
-        data = resp.json()
         results = []
-        for hit in data.get("hits", []):
-            results.append({
-                "source": "Pixabay",
-                "title": query,
-                "url": hit.get("webformatURL", ""),
-                "page_url": hit.get("pageURL", ""),
-            })
-        return results
+        # Double recherche : illustration puis photo, on prend le meilleur des deux
+        for img_type in ["illustration", "photo"]:
+            resp = requests.get(
+                "https://pixabay.com/api/",
+                params={
+                    "key": key,
+                    "q": query,
+                    "image_type": img_type,
+                    "per_page": str(n),
+                    "safesearch": "true",
+                    "lang": "en",
+                    "order": "relevant",
+                },
+                timeout=10
+            )
+            data = resp.json()
+            for hit in data.get("hits", []):
+                # Filtrage strict : les tags Pixabay doivent contenir au moins un mot de la query
+                tags = hit.get("tags", "").lower()
+                query_words = [w for w in query.lower().split() if len(w) > 3]
+                if not any(w in tags for w in query_words):
+                    continue
+                url = hit.get("webformatURL", "")
+                if url:
+                    results.append({
+                        "source": f"Pixabay ({img_type})",
+                        "title": hit.get("tags", query)[:60],
+                        "url": url,
+                        "page_url": hit.get("pageURL", ""),
+                    })
+        return results[:n]
     except Exception:
         return []
 
 
-def rechercher_openverse(query: str, n: int = 5) -> list[dict]:
+def rechercher_met_museum(query: str, n: int = 6) -> list[dict]:
+    """Recherche dans la collection du Metropolitan Museum of Art (API publique, sans clé)."""
+    try:
+        # Étape 1 : recherche des IDs d'objets correspondant à la requête
+        search_resp = requests.get(
+            "https://collectionapi.metmuseum.org/public/collection/v1/search",
+            params={
+                "q": query,
+                "hasImages": "true",
+                "medium": "Arms and Armor,Metalwork",
+            },
+            timeout=10
+        )
+        ids = search_resp.json().get("objectIDs", []) or []
+        if not ids:
+            # Fallback sans filtre medium
+            search_resp2 = requests.get(
+                "https://collectionapi.metmuseum.org/public/collection/v1/search",
+                params={"q": query, "hasImages": "true"},
+                timeout=10
+            )
+            ids = search_resp2.json().get("objectIDs", []) or []
+
+        results = []
+        for obj_id in ids[:n * 3]:  # On en essaie plus pour compenser les sans-image
+            try:
+                obj_resp = requests.get(
+                    f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{obj_id}",
+                    timeout=8
+                )
+                obj = obj_resp.json()
+                img_url = obj.get("primaryImageSmall") or obj.get("primaryImage", "")
+                if not img_url:
+                    continue
+                title = obj.get("title", query)
+                dept  = obj.get("department", "")
+                date  = obj.get("objectDate", "")
+                results.append({
+                    "source": f"Met Museum ({dept})",
+                    "title": f"{title} — {date}"[:60],
+                    "url": img_url,
+                    "page_url": obj.get("objectURL", ""),
+                })
+                if len(results) >= n:
+                    break
+            except Exception:
+                continue
+        return results
+    except Exception:
+        return []
+
+def rechercher_openverse(query: str, n: int = 4) -> list[dict]:
     """Recherche sur Openverse (images Creative Commons) — sans clé."""
     try:
         resp = requests.get(
             "https://api.openverse.org/v1/images/",
-            params={"q": query, "page_size": str(n), "license_type": "commercial,modification"},
+            params={
+                "q": query, "page_size": str(n * 2),
+                "license_type": "commercial,modification",
+                "mature": "false",
+            },
             headers={"User-Agent": "RDD-App/1.0"},
             timeout=10
         )
         data = resp.json()
         results = []
+        query_words = [w.lower() for w in query.split() if len(w) > 3]
+        exclude_words = {"fox","wolf","dog","cat","bird","flower","tree","portrait"}
         for item in data.get("results", []):
-            url = item.get("thumbnail") or item.get("url", "")
-            if url:
-                results.append({
-                    "source": "Openverse (CC)",
-                    "title": item.get("title", query),
-                    "url": url,
-                    "page_url": item.get("foreign_landing_url", ""),
-                })
+            url   = item.get("thumbnail") or item.get("url", "")
+            title = (item.get("title") or "").lower()
+            tags  = " ".join(t.get("name","") for t in item.get("tags", [])).lower()
+            combined = title + " " + tags
+            if not url:
+                continue
+            if any(w in combined for w in exclude_words):
+                continue
+            if not any(w in combined for w in query_words):
+                continue
+            results.append({
+                "source": "Openverse (CC)",
+                "title": (item.get("title") or query)[:60],
+                "url": url,
+                "page_url": item.get("foreign_landing_url", ""),
+            })
+            if len(results) >= n:
+                break
         return results
     except Exception:
         return []
@@ -604,16 +712,17 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
             search_key = f"img_search_{key_prefix}_{eq_id}"
             if st.button("🔍 Rechercher des illustrations", key=f"btn_search_{key_prefix}_{eq_id}"):
                 query_fr, query_en = _build_queries(nom, sous_cat, notes)
-                with st.spinner("Recherche en cours (FR + EN) sur Wikimedia, Openverse, Pixabay..."):
+                with st.spinner("Recherche en cours sur Met Museum, Wikimedia, Pixabay, Openverse..."):
                     results = []
-                    # Recherche en français
-                    results += rechercher_wikimedia(query_fr, n=3)
-                    results += rechercher_openverse(query_fr, n=3)
-                    results += rechercher_pixabay(query_fr, n=3)
-                    # Recherche en anglais
-                    results += rechercher_wikimedia(query_en, n=3)
+                    # Met Museum (EN uniquement, collection d'armes historiques)
+                    results += rechercher_met_museum(query_en, n=5)
+                    # Wikimedia Commons (FR + EN)
+                    results += rechercher_wikimedia(query_fr, n=4)
+                    results += rechercher_wikimedia(query_en, n=4)
+                    # Pixabay (EN — illustrations et photos)
+                    results += rechercher_pixabay(query_en, n=4)
+                    # Openverse (EN)
                     results += rechercher_openverse(query_en, n=3)
-                    results += rechercher_pixabay(query_en, n=3)
                     # Dédoublonnage par URL
                     seen, unique = set(), []
                     for r in results:
