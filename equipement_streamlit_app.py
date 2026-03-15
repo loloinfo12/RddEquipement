@@ -282,6 +282,122 @@ MONTURES = ["Aucune", "Cheval", "Mule / Âne", "Charrette", "Aligate", "Autre"]
 # ─────────────────────────────────────────────
 #  GÉNÉRATION SVG VIA API CLAUDE
 # ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+#  RECHERCHE D'IMAGES (MULTI-SOURCE)
+# ─────────────────────────────────────────────
+
+def _build_query(nom: str, sous_categorie: str, notes: str) -> str:
+    """Construit une requête de recherche en anglais à partir des infos de l'arme."""
+    # Traductions basiques des catégories
+    cat_en = {
+        "Épées": "sword", "Haches": "axe", "Masses": "mace club",
+        "Dagues": "dagger knife", "Fléaux": "flail", "Lances": "spear lance",
+        "Armes d'hast": "polearm halberd", "Arbalètes": "crossbow",
+        "Arcs": "bow archery", "Armes de poing": "pistol", "Armes d'épaule": "rifle musket",
+    }
+    base = cat_en.get(sous_categorie, sous_categorie)
+    return f"medieval {nom} {base} weapon fantasy"
+
+
+def rechercher_wikimedia(query: str, n: int = 5) -> list[dict]:
+    """Recherche sur Wikimedia Commons — sans clé API."""
+    try:
+        resp = requests.get(
+            "https://commons.wikimedia.org/w/api.php",
+            params={
+                "action": "query", "format": "json", "generator": "search",
+                "gsrnamespace": "6", "gsrsearch": query, "gsrlimit": str(n),
+                "prop": "imageinfo", "iiprop": "url|mime|size",
+                "iiurlwidth": "400",
+            },
+            timeout=10
+        )
+        data = resp.json()
+        results = []
+        for page in data.get("query", {}).get("pages", {}).values():
+            ii = page.get("imageinfo", [{}])[0]
+            url = ii.get("thumburl") or ii.get("url", "")
+            mime = ii.get("mime", "")
+            if url and mime.startswith("image/"):
+                results.append({
+                    "source": "Wikimedia Commons",
+                    "title": page.get("title", "").replace("File:", ""),
+                    "url": url,
+                    "page_url": f"https://commons.wikimedia.org/wiki/{page.get('title','').replace(' ','_')}",
+                })
+        return results
+    except Exception:
+        return []
+
+
+def rechercher_pixabay(query: str, n: int = 5) -> list[dict]:
+    """Recherche sur Pixabay — nécessite PIXABAY_API_KEY dans secrets."""
+    try:
+        key = st.secrets.get("PIXABAY_API_KEY", "")
+        if not key:
+            return []
+        resp = requests.get(
+            "https://pixabay.com/api/",
+            params={
+                "key": key, "q": query, "image_type": "illustration,vector",
+                "category": "backgrounds,science", "per_page": str(n),
+                "safesearch": "true", "lang": "en",
+            },
+            timeout=10
+        )
+        data = resp.json()
+        results = []
+        for hit in data.get("hits", []):
+            results.append({
+                "source": "Pixabay",
+                "title": query,
+                "url": hit.get("webformatURL", ""),
+                "page_url": hit.get("pageURL", ""),
+            })
+        return results
+    except Exception:
+        return []
+
+
+def rechercher_openverse(query: str, n: int = 5) -> list[dict]:
+    """Recherche sur Openverse (images Creative Commons) — sans clé."""
+    try:
+        resp = requests.get(
+            "https://api.openverse.org/v1/images/",
+            params={"q": query, "page_size": str(n), "license_type": "commercial,modification"},
+            headers={"User-Agent": "RDD-App/1.0"},
+            timeout=10
+        )
+        data = resp.json()
+        results = []
+        for item in data.get("results", []):
+            url = item.get("thumbnail") or item.get("url", "")
+            if url:
+                results.append({
+                    "source": "Openverse (CC)",
+                    "title": item.get("title", query),
+                    "url": url,
+                    "page_url": item.get("foreign_landing_url", ""),
+                })
+        return results
+    except Exception:
+        return []
+
+
+def telecharger_en_base64(url: str) -> str | None:
+    """Télécharge une image et la convertit en base64 data-URI."""
+    try:
+        resp = requests.get(url, timeout=15, headers={"User-Agent": "RDD-App/1.0"})
+        if resp.status_code == 200:
+            import base64
+            mime = resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
+            b64  = base64.b64encode(resp.content).decode()
+            return f"data:{mime};base64,{b64}"
+    except Exception:
+        pass
+    return None
+
+
 def generer_svg_arme(nom: str, sous_categorie: str, notes: str, degats: str = "") -> str | None:
     """Appelle l'API Claude pour générer un SVG illustrant l'arme."""
     prompt = f"""Tu es un illustrateur médiéval spécialisé dans les armes fantasy.
@@ -298,9 +414,13 @@ Règles ABSOLUES — respecte-les toutes sans exception :
 - Toutes les lignes, contours et détails : stroke="#2c1a0e" (brun très foncé), fill="none" ou fill="#2c1a0e"
 - JAMAIS de couleurs sombres comme #000, #111, #1a0f05 ou similaires pour le fond
 - Style gravure : traits fins (stroke-width entre 0.8 et 2), hachures, détails minutieux
-- L'arme occupe 70% de l'espace, centrée, légèrement inclinée
-- Petits détails décoratifs (runes, ornements) cohérents avec la description
-- En bas : nom en petites capitales, font-family="serif", fill="#b8860b", font-size="14"
+- L'arme DOIT occuper AU MINIMUM 80% de la surface totale du SVG (300×400)
+- Centre le dessin exactement sur x=150, y=180 (centre du SVG hors texte)
+- L'arme doit être GRANDE : utilise tout l'espace de x=20 à x=280 et y=20 à y=340
+- Incline légèrement l'arme (rotate entre 10° et 30°) pour un effet dynamique
+- Ajoute des hachures fines pour les ombres et du volume
+- Petits détails décoratifs (runes, ornements, gravures) sur la lame ou le manche
+- En bas (y=375) : nom en petites capitales centré, font-family="serif", fill="#b8860b", font-size="13", text-anchor="middle", x="150"
 - PAS de texte descriptif superflu
 - Renvoie UNIQUEMENT le code SVG brut, sans markdown, sans explication, sans balise ```"""
 
@@ -328,55 +448,97 @@ Règles ABSOLUES — respecte-les toutes sans exception :
         return None
 
 
+def _afficher_image_stockee(data_uri: str, nom: str):
+    """Affiche une image stockée en base64 ou un SVG."""
+    if data_uri.startswith("data:image/"):
+        st.markdown(f"""
+        <div style="border:2px solid #b8860b;border-radius:6px;padding:8px;
+                    background:#1a0f05;display:flex;justify-content:center;">
+            <img src="{data_uri}" style="max-width:100%;max-height:380px;
+                       object-fit:contain;border-radius:4px;" alt="{nom}"/>
+        </div>""", unsafe_allow_html=True)
+    elif data_uri.strip().startswith("<svg"):
+        svg_clean = re.sub(
+            r'<rect[^>]*fill="#(?:1a0f05|0d0a07|111|000000|1f1f1f|0a0500)[^"]*"[^>]*/?>'
+,
+            '', data_uri, flags=re.IGNORECASE
+        )
+        st.markdown(f"""
+        <div style="border:2px solid #b8860b;border-radius:6px;padding:12px;
+                    background:#f5ead0;display:flex;justify-content:center;
+                    max-width:320px;margin:0 auto;">{svg_clean}</div>
+        """, unsafe_allow_html=True)
+
+
 def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: str = ""):
-    """Affiche l'expander avec illustration SVG pour une arme."""
+    """Affiche l'expander avec illustration pour une arme (image ou SVG)."""
     nom      = str(row.get("nom", ""))
-    svg      = row.get("svg_illustration", "") or ""
+    stockee  = row.get("svg_illustration", "") or ""
     sous_cat = str(row.get("sous_categorie", ""))
     notes    = str(row.get("notes", "") or "")
     degats   = str(row.get("degats", "") or "")
     eq_id    = row.get("id", None)
 
-    icon  = "🖼️" if svg and svg.strip().startswith("<svg") else "✦"
-    label = f"{icon} {nom}"
+    has_img  = bool(stockee and (stockee.startswith("data:image/") or stockee.strip().startswith("<svg")))
+    icon     = "🖼️" if has_img else "✦"
 
-    with st.expander(label):
-        if svg and svg.strip().startswith("<svg"):
-            # Sanitize : supprimer tout fond sombre éventuel généré par erreur
-            import re as _re
-            svg_clean = _re.sub(
-                r'<rect[^>]*fill="#(?:1a0f05|0d0a07|111|000000|1f1f1f|0a0500)[^"]*"[^>]*/?>',
-                '', svg, flags=_re.IGNORECASE
-            )
-            st.markdown(f"""
-            <div style="
-                border: 2px solid #b8860b;
-                border-radius: 6px;
-                padding: 12px;
-                background: #f5ead0;
-                display: flex;
-                justify-content: center;
-                max-width: 320px;
-                margin: 0 auto;
-            ">{svg_clean}</div>
-            """, unsafe_allow_html=True)
+    with st.expander(f"{icon} {nom}"):
+        if has_img:
+            _afficher_image_stockee(stockee, nom)
         else:
-            st.caption("Aucune illustration générée pour cette arme.")
+            st.caption("Aucune illustration pour cette arme.")
 
+        # ── ADMIN : outils de recherche + génération SVG ──
         if is_admin and eq_id is not None:
-            btn_label = "🎨 Regénérer l'illustration" if svg else "🎨 Générer l'illustration"
-            if st.button(btn_label, key=f"gen_svg_{key_prefix}_{eq_id}"):
-                with st.spinner(f"Illustration de « {nom} » en cours..."):
-                    nouveau_svg = generer_svg_arme(nom, sous_cat, notes, degats)
-                if nouveau_svg:
-                    execute("UPDATE equipements SET svg_illustration=%s WHERE id=%s",
-                            (nouveau_svg, int(eq_id)))
-                    invalidate_cache()
-                    st.success("Illustration sauvegardée !")
-                    st.rerun()
-                else:
-                    st.error("La génération a échoué.")
+            st.markdown("---")
 
+            # Recherche d'images
+            search_key = f"img_search_{key_prefix}_{eq_id}"
+            if st.button("🔍 Rechercher des illustrations", key=f"btn_search_{key_prefix}_{eq_id}"):
+                query = _build_query(nom, sous_cat, notes)
+                with st.spinner("Recherche en cours sur Wikimedia, Openverse, Pixabay..."):
+                    results = []
+                    results += rechercher_wikimedia(query, n=4)
+                    results += rechercher_openverse(query, n=4)
+                    results += rechercher_pixabay(query, n=4)
+                st.session_state[search_key] = results
+
+            # Afficher la galerie si des résultats sont en session
+            results = st.session_state.get(search_key, [])
+            if results:
+                st.markdown(f"**{len(results)} résultats trouvés** — cliquez sur une image pour la sélectionner :")
+                cols = st.columns(3)
+                for idx, item in enumerate(results):
+                    with cols[idx % 3]:
+                        st.image(item["url"], caption=f"{item['source']}", use_container_width=True)
+                        if st.button("✅ Choisir", key=f"pick_{key_prefix}_{eq_id}_{idx}"):
+                            with st.spinner("Téléchargement en cours..."):
+                                b64 = telecharger_en_base64(item["url"])
+                            if b64:
+                                execute("UPDATE equipements SET svg_illustration=%s WHERE id=%s",
+                                        (b64, int(eq_id)))
+                                invalidate_cache()
+                                del st.session_state[search_key]
+                                st.success("Image sauvegardée !")
+                                st.rerun()
+                            else:
+                                st.error("Impossible de télécharger cette image.")
+
+            st.markdown("")
+            # Génération SVG par Claude (option secondaire)
+            with st.expander("🎨 Générer une illustration SVG avec Claude"):
+                btn_lbl = "Regénérer le SVG" if has_img and stockee.strip().startswith("<svg") else "Générer un SVG"
+                if st.button(btn_lbl, key=f"gen_svg_{key_prefix}_{eq_id}"):
+                    with st.spinner(f"Génération SVG de « {nom} »..."):
+                        nouveau_svg = generer_svg_arme(nom, sous_cat, notes, degats)
+                    if nouveau_svg:
+                        execute("UPDATE equipements SET svg_illustration=%s WHERE id=%s",
+                                (nouveau_svg, int(eq_id)))
+                        invalidate_cache()
+                        st.success("SVG sauvegardé !")
+                        st.rerun()
+                    else:
+                        st.error("La génération a échoué.")
 
 # ─────────────────────────────────────────────
 #  HELPERS D'AFFICHAGE DU CATALOGUE
