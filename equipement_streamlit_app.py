@@ -285,21 +285,24 @@ MONTURES = ["Aucune", "Cheval", "Mule / Âne", "Charrette", "Aligate", "Autre"]
 def generer_svg_arme(nom: str, sous_categorie: str, notes: str, degats: str = "") -> str | None:
     """Appelle l'API Claude pour générer un SVG illustrant l'arme."""
     prompt = f"""Tu es un illustrateur médiéval spécialisé dans les armes fantasy.
-Crée un SVG 300×400 illustrant cette arme de manière artistique, dans un style gravure médiévale sur parchemin.
+Crée un SVG 300×400 illustrant cette arme de manière artistique, dans un style gravure médiévale sur parchemin clair.
 
 Arme : {nom}
 Catégorie : {sous_categorie}
 Description : {notes}
 Dégâts : {degats or "non précisé"}
 
-Règles strictes :
-- SVG viewBox="0 0 300 400", fond transparent
-- Style : trait fin noir/sépia (#2c1a0e), hachures, ombres dessinées à la main
-- L'arme doit occuper 70% de l'espace, centrée, légèrement en diagonale
-- Ajoute de petits détails décoratifs (runes, motifs) cohérents avec la description
-- En bas : le nom en petites capitales, police serif, couleur #b8860b
-- PAS de texte descriptif, PAS de fond coloré plein
-- Renvoie UNIQUEMENT le code SVG brut, sans balise markdown, sans explication"""
+Règles ABSOLUES — respecte-les toutes sans exception :
+- SVG viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"
+- FOND OBLIGATOIRE : commence par <rect width="300" height="400" fill="#f5ead0"/> (parchemin clair)
+- Toutes les lignes, contours et détails : stroke="#2c1a0e" (brun très foncé), fill="none" ou fill="#2c1a0e"
+- JAMAIS de couleurs sombres comme #000, #111, #1a0f05 ou similaires pour le fond
+- Style gravure : traits fins (stroke-width entre 0.8 et 2), hachures, détails minutieux
+- L'arme occupe 70% de l'espace, centrée, légèrement inclinée
+- Petits détails décoratifs (runes, ornements) cohérents avec la description
+- En bas : nom en petites capitales, font-family="serif", fill="#b8860b", font-size="14"
+- PAS de texte descriptif superflu
+- Renvoie UNIQUEMENT le code SVG brut, sans markdown, sans explication, sans balise ```"""
 
     try:
         resp = requests.post(
@@ -339,15 +342,23 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
 
     with st.expander(label):
         if svg and svg.strip().startswith("<svg"):
+            # Sanitize : supprimer tout fond sombre éventuel généré par erreur
+            import re as _re
+            svg_clean = _re.sub(
+                r'<rect[^>]*fill="#(?:1a0f05|0d0a07|111|000000|1f1f1f|0a0500)[^"]*"[^>]*/?>',
+                '', svg, flags=_re.IGNORECASE
+            )
             st.markdown(f"""
             <div style="
                 border: 2px solid #b8860b;
                 border-radius: 6px;
                 padding: 12px;
-                background: rgba(245,234,208,0.06);
+                background: #f5ead0;
                 display: flex;
                 justify-content: center;
-            ">{svg}</div>
+                max-width: 320px;
+                margin: 0 auto;
+            ">{svg_clean}</div>
             """, unsafe_allow_html=True)
         else:
             st.caption("Aucune illustration générée pour cette arme.")
