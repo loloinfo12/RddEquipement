@@ -79,7 +79,6 @@ h1, h2, h3 {
     background: rgba(245, 234, 208, 0.12) !important;
     border-color: var(--gold) !important;
 }
-/* Force la couleur du texte saisi dans TOUS les états */
 input[type="text"],
 input[type="password"],
 input[type="number"],
@@ -95,7 +94,6 @@ input:-webkit-autofill:focus {
     -webkit-text-fill-color: #f5ead0 !important;
     box-shadow: 0 0 0px 1000px #1a0f05 inset !important;
 }
-/* Surcharge agressive des classes Streamlit internes */
 [data-baseweb="input"] input,
 [data-baseweb="base-input"] input,
 [data-testid="stTextInput"] input,
@@ -107,7 +105,6 @@ div[class*="st-"] input {
     -webkit-text-fill-color: #f5ead0 !important;
     background-color: rgba(245, 234, 208, 0.08) !important;
 }
-/* Placeholder en gris clair */
 [data-baseweb="input"] input::placeholder,
 [data-testid="stTextInput"] input::placeholder {
     color: rgba(245, 234, 208, 0.3) !important;
@@ -165,11 +162,38 @@ hr { border-color: var(--gold) !important; opacity: 0.3; }
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
+#  COLONNES ARMES
+# ─────────────────────────────────────────────
+# Colonnes communes à toutes les armes
+COLS_ARMES_COMMUNES = ["degats", "mains", "force_requise", "resistance"]
+# Colonnes spécifiques aux armes de tir
+COLS_ARMES_TIR      = ["m_distance", "portee_max", "magasin", "tir_rechargement"]
+
+# Sous-catégories considérées comme armes de tir
+SOUS_CAT_TIR = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule"}
+
+# Labels affichables
+LABELS_COMMUNES = {
+    "degats":        "Dégâts",
+    "mains":         "Mains",
+    "force_requise": "Force requise",
+    "resistance":    "Résistance",
+}
+LABELS_TIR = {
+    "m_distance":       "M. distance",
+    "portee_max":       "Portée max",
+    "magasin":          "Magasin",
+    "tir_rechargement": "Tir/Rechargement",
+}
+
+def is_tir(sous_categorie: str) -> bool:
+    return str(sous_categorie) in SOUS_CAT_TIR
+
+# ─────────────────────────────────────────────
 #  CONNEXION NEON
 # ─────────────────────────────────────────────
 @contextmanager
 def get_conn():
-    """Ouvre une connexion PostgreSQL (Neon) et la ferme proprement."""
     conn = psycopg2.connect(
         st.secrets["DATABASE_URL"],
         cursor_factory=RealDictCursor
@@ -225,7 +249,9 @@ def load_inventory(player_id: int) -> pd.DataFrame:
     rows = query("""
         SELECT i.id AS inv_id, i.quantite, i.localisation,
                e.id AS eq_id, e.nom, e.categorie, e.sous_categorie,
-               e.poids_kg, e.prix_deniers, e.notes
+               e.poids_kg, e.prix_deniers, e.notes,
+               e.degats, e.mains, e.force_requise, e.resistance,
+               e.m_distance, e.portee_max, e.magasin, e.tir_rechargement
         FROM inventaire i
         JOIN equipements e ON e.id = i.equipement_id
         WHERE i.player_id = %s
@@ -250,6 +276,81 @@ def invalidate_cache():
     load_player_info.clear()
 
 MONTURES = ["Aucune", "Cheval", "Mule / Âne", "Charrette", "Aligate", "Autre"]
+
+# ─────────────────────────────────────────────
+#  HELPERS D'AFFICHAGE DU CATALOGUE
+# ─────────────────────────────────────────────
+def _cols_display_melee(df: pd.DataFrame) -> tuple[list, dict]:
+    """Retourne (liste_cols, rename_dict) pour les armes de mêlée."""
+    base  = ["categorie","sous_categorie","nom","poids_kg","prix_deniers"]
+    stats = [c for c in COLS_ARMES_COMMUNES if c in df.columns]
+    extra = ["notes"]
+    cols  = [c for c in base + stats + extra if c in df.columns]
+    rename = {
+        "categorie":"Catégorie","sous_categorie":"Sous-catégorie",
+        "nom":"Nom","poids_kg":"Poids (kg)","prix_deniers":"Prix (deniers)","notes":"Notes",
+        **{k: v for k, v in LABELS_COMMUNES.items()},
+    }
+    return cols, rename
+
+def _cols_display_tir(df: pd.DataFrame) -> tuple[list, dict]:
+    """Retourne (liste_cols, rename_dict) pour les armes de tir."""
+    base  = ["categorie","sous_categorie","nom","poids_kg","prix_deniers"]
+    stats = [c for c in COLS_ARMES_COMMUNES[:1] + COLS_ARMES_TIR if c in df.columns]  # juste dégâts + tir
+    extra = ["notes"]
+    cols  = [c for c in base + stats + extra if c in df.columns]
+    rename = {
+        "categorie":"Catégorie","sous_categorie":"Sous-catégorie",
+        "nom":"Nom","poids_kg":"Poids (kg)","prix_deniers":"Prix (deniers)","notes":"Notes",
+        **{k: v for k, v in LABELS_COMMUNES.items()},
+        **{k: v for k, v in LABELS_TIR.items()},
+    }
+    return cols, rename
+
+def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat"):
+    """Widget de catalogue filtrable avec onglets mêlée / tir."""
+    if df.empty:
+        st.info("Le catalogue est vide.")
+        return
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        cats = ["Toutes"] + sorted(df["categorie"].dropna().unique().tolist())
+        cat_filter = st.selectbox("Catégorie", cats, key=f"{key_prefix}_cat")
+    with c2:
+        sub_df = df[df["categorie"] == cat_filter] if cat_filter != "Toutes" else df
+        sous = ["Toutes"] + sorted(sub_df["sous_categorie"].dropna().unique().tolist())
+        sous_filter = st.selectbox("Sous-catégorie", sous, key=f"{key_prefix}_sous")
+    with c3:
+        search = st.text_input("🔍 Rechercher", placeholder="Nom de l'objet...", key=f"{key_prefix}_search")
+
+    filtered = df.copy()
+    if cat_filter  != "Toutes": filtered = filtered[filtered["categorie"]      == cat_filter]
+    if sous_filter != "Toutes": filtered = filtered[filtered["sous_categorie"] == sous_filter]
+    if search:                  filtered = filtered[filtered["nom"].str.contains(search, case=False, na=False)]
+
+    st.markdown(f"**{len(filtered)}** objet(s) trouvé(s)")
+
+    # Séparer mêlée / tir
+    mask_tir  = filtered["sous_categorie"].apply(is_tir) if "sous_categorie" in filtered.columns else pd.Series(False, index=filtered.index)
+    df_melee  = filtered[~mask_tir]
+    df_tir    = filtered[mask_tir]
+
+    tab_melee, tab_tir = st.tabs([f"⚔️ Armes de mêlée ({len(df_melee)})", f"🏹 Armes de tir ({len(df_tir)})"])
+
+    with tab_melee:
+        if df_melee.empty:
+            st.caption("Aucune arme de mêlée dans cette sélection.")
+        else:
+            cols, rename = _cols_display_melee(df_melee)
+            st.dataframe(df_melee[cols].rename(columns=rename), use_container_width=True, hide_index=True)
+
+    with tab_tir:
+        if df_tir.empty:
+            st.caption("Aucune arme de tir dans cette sélection.")
+        else:
+            cols, rename = _cols_display_tir(df_tir)
+            st.dataframe(df_tir[cols].rename(columns=rename), use_container_width=True, hide_index=True)
 
 # ─────────────────────────────────────────────
 #  SESSION STATE
@@ -298,39 +399,72 @@ def page_admin():
     # ── TAB 1 : Catalogue ──
     with tab1:
         df = load_equipements()
-        if df.empty:
-            st.info("Le catalogue est vide. Importez des équipements.")
-        else:
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                cats = ["Toutes"] + sorted(df["categorie"].dropna().unique().tolist())
-                cat_filter = st.selectbox("Catégorie", cats)
-            with c2:
-                sub_df = df[df["categorie"] == cat_filter] if cat_filter != "Toutes" else df
-                sous = ["Toutes"] + sorted(sub_df["sous_categorie"].dropna().unique().tolist())
-                sous_filter = st.selectbox("Sous-catégorie", sous)
-            with c3:
-                search = st.text_input("🔍 Rechercher", placeholder="Nom de l'objet...")
+        afficher_catalogue(df, key_prefix="admin_cat")
 
-            filtered = df.copy()
-            if cat_filter  != "Toutes": filtered = filtered[filtered["categorie"]      == cat_filter]
-            if sous_filter != "Toutes": filtered = filtered[filtered["sous_categorie"] == sous_filter]
-            if search:                  filtered = filtered[filtered["nom"].str.contains(search, case=False, na=False)]
+        st.markdown("---")
+        st.markdown("##### ✏️ Modifier les stats d'une arme")
+        if not df.empty:
+            to_edit = st.selectbox("Sélectionner l'arme à modifier", sorted(df["nom"].tolist()), key="admin_edit_sel")
+            row_edit = df[df["nom"] == to_edit].iloc[0]
+            eq_id_edit = int(row_edit["id"])
 
-            st.markdown(f"**{len(filtered)}** objets trouvés")
-            disp = ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes"]
-            disp = [c for c in disp if c in filtered.columns]
-            st.dataframe(
-                filtered[disp].rename(columns={
-                    "categorie":"Catégorie","sous_categorie":"Sous-catégorie",
-                    "nom":"Nom","poids_kg":"Poids (kg)","prix_deniers":"Prix (deniers)","notes":"Notes"
-                }),
-                use_container_width=True, hide_index=True
-            )
+            sous_cat_edit = str(row_edit.get("sous_categorie", ""))
+            tir_mode = is_tir(sous_cat_edit)
 
-            st.markdown("---")
-            st.markdown("##### 🗑️ Supprimer un équipement")
-            to_delete = st.selectbox("Sélectionner l'objet à supprimer", sorted(df["nom"].tolist()))
+            with st.form(key="form_edit_arme"):
+                st.markdown(f"**{to_edit}** — *{sous_cat_edit}*")
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    edit_degats = st.text_input("Dégâts", value=str(row_edit.get("degats") or ""))
+                    edit_mains  = st.text_input("Mains",  value=str(row_edit.get("mains")  or ""))
+                with c2:
+                    edit_force = st.text_input("Force requise", value=str(row_edit.get("force_requise") or ""))
+                    edit_res   = st.text_input("Résistance",    value=str(row_edit.get("resistance")    or ""))
+                with c3:
+                    if tir_mode:
+                        edit_m_dist = st.text_input("M. distance", value=str(row_edit.get("m_distance") or ""))
+                        edit_portee = st.text_input("Portée max",  value=str(row_edit.get("portee_max") or ""))
+                    else:
+                        edit_m_dist = edit_portee = ""
+                with c4:
+                    if tir_mode:
+                        edit_magasin = st.text_input("Magasin",            value=str(row_edit.get("magasin")          or ""))
+                        edit_tir_rech= st.text_input("Tir/Rechargement",   value=str(row_edit.get("tir_rechargement") or ""))
+                    else:
+                        edit_magasin = edit_tir_rech = ""
+
+                if st.form_submit_button("💾 Sauvegarder les stats"):
+                    if tir_mode:
+                        execute("""
+                            UPDATE equipements
+                            SET degats=%s, mains=%s, force_requise=%s, resistance=%s,
+                                m_distance=%s, portee_max=%s, magasin=%s, tir_rechargement=%s
+                            WHERE id=%s
+                        """, (
+                            edit_degats or None, edit_mains or None,
+                            edit_force  or None, edit_res   or None,
+                            edit_m_dist or None, edit_portee or None,
+                            edit_magasin or None, edit_tir_rech or None,
+                            eq_id_edit
+                        ))
+                    else:
+                        execute("""
+                            UPDATE equipements
+                            SET degats=%s, mains=%s, force_requise=%s, resistance=%s
+                            WHERE id=%s
+                        """, (
+                            edit_degats or None, edit_mains or None,
+                            edit_force  or None, edit_res   or None,
+                            eq_id_edit
+                        ))
+                    invalidate_cache()
+                    st.success(f"Stats de « {to_edit} » mises à jour.")
+                    st.rerun()
+
+        st.markdown("---")
+        st.markdown("##### 🗑️ Supprimer un équipement")
+        if not df.empty:
+            to_delete = st.selectbox("Sélectionner l'objet à supprimer", sorted(df["nom"].tolist()), key="admin_del")
             if st.button("Supprimer cet objet", type="primary"):
                 obj_id = int(df[df["nom"] == to_delete]["id"].values[0])
                 execute("DELETE FROM equipements WHERE id=%s", (obj_id,))
@@ -346,17 +480,42 @@ def page_admin():
             new_cat   = st.text_input("Catégorie", value="Armes")
             new_sous  = st.text_input("Sous-catégorie")
             new_nom   = st.text_input("Nom de l'objet")
-        with c2:
-            new_poids = st.number_input("Poids (kg)", min_value=0.0, step=0.05, format="%.2f")
-            new_prix  = st.number_input("Prix (deniers)", min_value=0, step=10)
             new_notes = st.text_input("Notes (optionnel)")
+        with c2:
+            new_poids = st.number_input("Poids (kg)",       min_value=0.0, step=0.05, format="%.2f")
+            new_prix  = st.number_input("Prix (deniers)",   min_value=0,   step=10)
+            new_degats= st.text_input("Dégâts (+dom)",      placeholder="ex: A+3")
+            new_mains = st.text_input("Mains",              placeholder="ex: 1 ou 1\\2")
+            new_force = st.text_input("Force requise",      placeholder="ex: 11")
+            new_res   = st.text_input("Résistance",         placeholder="ex: 12")
+
+        tir_mode_new = is_tir(new_sous)
+        if tir_mode_new:
+            st.markdown("**Spécifique armes de tir**")
+            c1t, c2t, c3t, c4t = st.columns(4)
+            with c1t: new_m_dist  = st.text_input("M. distance")
+            with c2t: new_portee  = st.text_input("Portée max")
+            with c3t: new_magasin = st.text_input("Magasin")
+            with c4t: new_tir_r   = st.text_input("Tir/Rechargement")
+        else:
+            new_m_dist = new_portee = new_magasin = new_tir_r = ""
 
         if st.button("✅ Ajouter au catalogue"):
             if new_nom.strip():
                 execute("""
-                    INSERT INTO equipements (categorie, sous_categorie, nom, poids_kg, prix_deniers, notes)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (new_cat.strip(), new_sous.strip(), new_nom.strip(), new_poids, new_prix, new_notes.strip()))
+                    INSERT INTO equipements
+                        (categorie, sous_categorie, nom, poids_kg, prix_deniers, notes,
+                         degats, mains, force_requise, resistance,
+                         m_distance, portee_max, magasin, tir_rechargement)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    new_cat.strip(), new_sous.strip(), new_nom.strip(),
+                    new_poids, new_prix, new_notes.strip(),
+                    new_degats or None, new_mains or None,
+                    new_force  or None, new_res   or None,
+                    new_m_dist or None, new_portee or None,
+                    new_magasin or None, new_tir_r or None,
+                ))
                 invalidate_cache()
                 st.success(f"« {new_nom} » ajouté au catalogue !")
                 st.rerun()
@@ -365,22 +524,41 @@ def page_admin():
 
         st.markdown("---")
         st.markdown("#### Importer un fichier CSV ou Excel")
-        st.caption("Format attendu : Catégorie;Sous-catégorie;Nom;Poids (Kg);Prix (Deniers);Notes — tous les onglets seront importés")
+        st.caption("""
+        **Format attendu (colonnes) :**
+        Catégorie ; Sous-catégorie ; Nom ; Poids (Kg) ; Prix (Deniers) ; Notes ;
+        Dégâts ; Mains ; Force requise ; Résistance ;
+        M. distance ; Portée max ; Magasin ; Tir/Rechargement
+
+        Tous les onglets d'un fichier Excel seront importés.
+        Les colonnes absentes seront ignorées sans erreur.
+        """)
+
         uploaded = st.file_uploader("Choisir un fichier CSV ou Excel", type=["csv", "xlsx", "xls"])
         if uploaded:
             try:
+                import io
                 col_map = {
-                    "Catégorie":"categorie","Sous-catégorie":"sous_categorie",
-                    "Nom":"nom","Poids (Kg)":"poids_kg","Prix (Deniers)":"prix_deniers","Notes":"notes",
+                    "Catégorie":         "categorie",
+                    "Sous-catégorie":    "sous_categorie",
+                    "Nom":               "nom",
+                    "Poids (Kg)":        "poids_kg",
+                    "Prix (Deniers)":    "prix_deniers",
+                    "Notes":             "notes",
+                    "Dégâts":            "degats",
+                    "Mains":             "mains",
+                    "Force requise":     "force_requise",
+                    "Résistance":        "resistance",
+                    "M. distance":       "m_distance",
+                    "Portée max":        "portee_max",
+                    "Magasin":           "magasin",
+                    "Tir/Rechargement":  "tir_rechargement",
                 }
 
-                # ── Lire toutes les feuilles / le CSV ──
-                import io
                 filename = uploaded.name.lower()
                 if filename.endswith(".csv"):
                     sheets = {"Feuille 1": pd.read_csv(uploaded, sep=";", encoding="latin-1")}
                 else:
-                    # calamine est un moteur Rust ultra-robuste qui ignore les styles
                     file_bytes = uploaded.read()
                     xls = pd.ExcelFile(io.BytesIO(file_bytes), engine="calamine")
                     sheets = {sheet: xls.parse(sheet) for sheet in xls.sheet_names}
@@ -388,49 +566,55 @@ def page_admin():
                 frames = []
                 for sheet_name, df_sheet in sheets.items():
                     df_sheet = df_sheet.rename(columns=col_map)
-                    # Garder uniquement les colonnes connues
-                    keep_cols = [c for c in ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes"] if c in df_sheet.columns]
-                    if "nom" not in keep_cols:
+                    if "nom" not in df_sheet.columns:
                         st.warning(f"Onglet « {sheet_name} » ignoré (colonne 'Nom' introuvable).")
                         continue
-                    df_sheet = df_sheet[keep_cols].dropna(subset=["nom"])
+                    df_sheet = df_sheet.dropna(subset=["nom"])
                     df_sheet["_onglet"] = sheet_name
                     frames.append(df_sheet)
 
                 if not frames:
-                    st.error("Aucun onglet valide trouvé dans le fichier.")
+                    st.error("Aucun onglet valide trouvé.")
                 else:
                     df_import = pd.concat(frames, ignore_index=True)
 
+                    # Nettoyage des colonnes numériques
                     if "poids_kg" in df_import.columns:
-                        df_import["poids_kg"] = df_import["poids_kg"].astype(str).str.replace(",",".").astype(float)
+                        df_import["poids_kg"] = df_import["poids_kg"].astype(str).str.replace(",", ".").pipe(pd.to_numeric, errors="coerce").fillna(0.0)
                     else:
                         df_import["poids_kg"] = 0.0
+
                     if "prix_deniers" in df_import.columns:
                         df_import["prix_deniers"] = pd.to_numeric(df_import["prix_deniers"], errors="coerce").fillna(0).astype(int)
                     else:
                         df_import["prix_deniers"] = 0
-                    if "notes" in df_import.columns:
-                        df_import["notes"] = df_import["notes"].fillna("").astype(str)
-                    else:
-                        df_import["notes"] = ""
+
+                    for col in ["notes", "degats", "mains", "force_requise", "resistance",
+                                "m_distance", "portee_max", "magasin", "tir_rechargement"]:
+                        if col in df_import.columns:
+                            df_import[col] = df_import[col].fillna("").astype(str).str.strip()
+                            df_import[col] = df_import[col].replace("", None)
+                        else:
+                            df_import[col] = None
+
                     if "categorie" not in df_import.columns:
                         df_import["categorie"] = df_import["_onglet"]
                     if "sous_categorie" not in df_import.columns:
                         df_import["sous_categorie"] = ""
 
-                    df_import = df_import.drop(columns=["_onglet"])
+                    df_import = df_import.drop(columns=["_onglet"], errors="ignore")
 
-                    # Aperçu par onglet
                     st.markdown(f"**{len(df_import)} objets détectés** dans {len(frames)} onglet(s)")
                     st.dataframe(df_import.head(15), use_container_width=True)
 
-                    keep = ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes"]
-                    keep = [c for c in keep if c in df_import.columns]
+                    all_cols = ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes",
+                                "degats","mains","force_requise","resistance",
+                                "m_distance","portee_max","magasin","tir_rechargement"]
+                    keep = [c for c in all_cols if c in df_import.columns]
 
                     if st.button("📥 Importer tous les onglets dans la base"):
                         records = [tuple(r[c] for c in keep) for _, r in df_import.iterrows()]
-                        cols_sql = ", ".join(keep)
+                        cols_sql     = ", ".join(keep)
                         placeholders = ", ".join(["%s"] * len(keep))
                         executemany(f"INSERT INTO equipements ({cols_sql}) VALUES ({placeholders})", records)
                         invalidate_cache()
@@ -450,9 +634,8 @@ def page_admin():
             selected_player = st.selectbox("Choisir un joueur", list(player_map.keys()))
             player_id = player_map[selected_player]
 
-            # ── Paramètres du joueur (monture + poids max) ──
             pinfo = load_player_info(player_id)
-            monture_j = pinfo.get("monture") or "Aucune"
+            monture_j   = pinfo.get("monture") or "Aucune"
             poids_max_j = float(pinfo.get("poids_max_joueur") or 0)
 
             with st.expander(f"⚙️ Paramètres de {selected_player}", expanded=False):
@@ -475,8 +658,8 @@ def page_admin():
                 st.info(f"{selected_player} ne possède aucun objet.")
             else:
                 df_inv["poids_total"] = df_inv["poids_kg"] * df_inv["quantite"]
-                df_soi     = df_inv[df_inv["localisation"] == "soi"]
-                df_mont    = df_inv[df_inv["localisation"] == "monture"]
+                df_soi  = df_inv[df_inv["localisation"] == "soi"]
+                df_mont = df_inv[df_inv["localisation"] == "monture"]
                 poids_soi  = df_soi["poids_total"].sum()
                 poids_mont = df_mont["poids_total"].sum()
 
@@ -500,30 +683,42 @@ def page_admin():
 
                 st.markdown("")
 
-                # Affichage sur soi
+                def _afficher_inventaire_section(df_section: pd.DataFrame, label_icon: str):
+                    for cat in sorted(df_section["categorie"].dropna().unique()):
+                        df_c = df_section[df_section["categorie"] == cat].copy()
+                        df_c["poids_total"] = df_c["poids_kg"] * df_c["quantite"]
+                        mask_tir  = df_c["sous_categorie"].apply(is_tir)
+                        df_c_mel  = df_c[~mask_tir]
+                        df_c_tir  = df_c[mask_tir]
+
+                        with st.expander(f"{label_icon} {cat}  •  {df_c['poids_total'].sum():.2f} kg", expanded=False):
+                            if not df_c_mel.empty:
+                                st.markdown("*Mêlée*")
+                                cols_m, ren_m = _cols_display_melee(df_c_mel)
+                                extra_inv = ["quantite", "poids_total", "localisation"]
+                                cols_show = [c for c in extra_inv + cols_m if c in df_c_mel.columns]
+                                ren_m.update({"quantite":"Qté","poids_total":"Poids total","localisation":"Lieu"})
+                                st.dataframe(df_c_mel[cols_show].rename(columns=ren_m), use_container_width=True, hide_index=True)
+                            if not df_c_tir.empty:
+                                st.markdown("*Tir*")
+                                cols_t, ren_t = _cols_display_tir(df_c_tir)
+                                extra_inv = ["quantite", "poids_total", "localisation"]
+                                cols_show = [c for c in extra_inv + cols_t if c in df_c_tir.columns]
+                                ren_t.update({"quantite":"Qté","poids_total":"Poids total","localisation":"Lieu"})
+                                st.dataframe(df_c_tir[cols_show].rename(columns=ren_t), use_container_width=True, hide_index=True)
+
                 st.markdown("**🧍 Sur soi**")
                 if df_soi.empty:
                     st.caption("Aucun objet sur soi.")
                 else:
-                    for cat in sorted(df_soi["categorie"].dropna().unique()):
-                        df_c = df_soi[df_soi["categorie"] == cat]
-                        with st.expander(f"⚔️ {cat}  •  {df_c['poids_total'].sum():.2f} kg", expanded=False):
-                            st.dataframe(df_c[["nom","quantite","poids_kg","poids_total","localisation"]].rename(columns={
-                                "nom":"Objet","quantite":"Qté","poids_kg":"Poids unit.","poids_total":"Poids total","localisation":"Lieu"
-                            }), use_container_width=True, hide_index=True)
+                    _afficher_inventaire_section(df_soi, "⚔️")
 
-                # Affichage sur monture
                 if monture_j != "Aucune":
                     st.markdown(f"**🐴 Sur la {monture_j}**")
                     if df_mont.empty:
                         st.caption(f"Aucun objet sur la {monture_j}.")
                     else:
-                        for cat in sorted(df_mont["categorie"].dropna().unique()):
-                            df_c = df_mont[df_mont["categorie"] == cat]
-                            with st.expander(f"⚔️ {cat}  •  {df_c['poids_total'].sum():.2f} kg", expanded=False):
-                                st.dataframe(df_c[["nom","quantite","poids_kg","poids_total"]].rename(columns={
-                                    "nom":"Objet","quantite":"Qté","poids_kg":"Poids unit.","poids_total":"Poids total"
-                                }), use_container_width=True, hide_index=True)
+                        _afficher_inventaire_section(df_mont, "🐴")
 
                 st.markdown("---")
                 c1, c2 = st.columns(2)
@@ -573,10 +768,10 @@ def page_admin():
                     chosen_eq = st.selectbox("Choisir l'objet", sorted(filtered_eq["nom"].tolist()), key="admin_add_eq")
                 with c2:
                     monture_cur = load_player_info(player_id).get("monture") or "Aucune"
-                    loc_opts   = ["soi"] + (["monture"] if monture_cur != "Aucune" else [])
-                    loc_lbls   = ["🧍 Sur soi"] + ([f"🐴 Sur la {monture_cur}"] if monture_cur != "Aucune" else [])
-                    loc_ch     = st.selectbox("Ranger où ?", loc_lbls, key="admin_add_loc")
-                    loc_v      = loc_opts[loc_lbls.index(loc_ch)]
+                    loc_opts    = ["soi"] + (["monture"] if monture_cur != "Aucune" else [])
+                    loc_lbls    = ["🧍 Sur soi"] + ([f"🐴 Sur la {monture_cur}"] if monture_cur != "Aucune" else [])
+                    loc_ch      = st.selectbox("Ranger où ?", loc_lbls, key="admin_add_loc")
+                    loc_v       = loc_opts[loc_lbls.index(loc_ch)]
 
                 if st.button("➕ Ajouter à l'inventaire"):
                     eq_id = int(df_eq[df_eq["nom"] == chosen_eq]["id"].values[0])
@@ -642,10 +837,9 @@ def page_joueur():
     tab1, tab2 = st.tabs(["🎒 Mon inventaire", "⚔️ Catalogue"])
 
     with tab1:
-        # ── Infos joueur (monture + poids max) ──
         pinfo = load_player_info(user["id"])
         monture_actuelle = pinfo.get("monture") or "Aucune"
-        poids_max = float(pinfo.get("poids_max_joueur") or 0)
+        poids_max        = float(pinfo.get("poids_max_joueur") or 0)
 
         with st.expander("⚙️ Paramètres du personnage", expanded=False):
             c1, c2 = st.columns(2)
@@ -653,7 +847,8 @@ def page_joueur():
                 monture_idx = MONTURES.index(monture_actuelle) if monture_actuelle in MONTURES else 0
                 new_monture = st.selectbox("Type de monture", MONTURES, index=monture_idx, key="j_monture")
             with c2:
-                new_poids_max = st.number_input("Poids max sur soi (kg)", min_value=0.0, value=poids_max, step=0.5, format="%.1f", key="j_poids_max")
+                new_poids_max = st.number_input("Poids max sur soi (kg)", min_value=0.0,
+                                                 value=poids_max, step=0.5, format="%.1f", key="j_poids_max")
             if st.button("💾 Sauvegarder", key="j_save_params"):
                 execute("UPDATE users SET monture=%s, poids_max_joueur=%s WHERE id=%s",
                         (new_monture, new_poids_max, user["id"]))
@@ -666,14 +861,13 @@ def page_joueur():
         if df_inv.empty:
             st.info("Votre besace est vide. Consultez le catalogue pour vous équiper.")
         else:
-            df_inv["poids_total"] = df_inv["poids_kg"] * df_inv["quantite"]
-            df_soi      = df_inv[df_inv["localisation"] == "soi"]
-            df_monture  = df_inv[df_inv["localisation"] == "monture"]
-            poids_soi      = df_soi["poids_total"].sum()
-            poids_monture  = df_monture["poids_total"].sum()
-            poids_total    = df_inv["poids_total"].sum()
+            df_inv["poids_total"]  = df_inv["poids_kg"] * df_inv["quantite"]
+            df_soi     = df_inv[df_inv["localisation"] == "soi"]
+            df_monture = df_inv[df_inv["localisation"] == "monture"]
+            poids_soi     = df_soi["poids_total"].sum()
+            poids_monture = df_monture["poids_total"].sum()
+            poids_total   = df_inv["poids_total"].sum()
 
-            # ── Métriques ──
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 st.markdown(f"""<div class="metric-card">
@@ -700,46 +894,45 @@ def page_joueur():
 
             st.markdown("")
 
-            # ── Affichage Sur soi ──
-            st.markdown("### 🧍 Sur soi")
-            if df_soi.empty:
-                st.caption("Aucun objet porté sur soi.")
-            else:
-                categories_soi = sorted(df_soi["categorie"].dropna().unique().tolist())
-                for cat in categories_soi:
-                    df_cat = df_soi[df_soi["categorie"] == cat].copy()
+            def _section_joueur(df_section: pd.DataFrame, titre: str):
+                st.markdown(f"### {titre}")
+                if df_section.empty:
+                    st.caption("Aucun objet.")
+                    return
+                for cat in sorted(df_section["categorie"].dropna().unique()):
+                    df_cat = df_section[df_section["categorie"] == cat].copy()
+                    df_cat["poids_total"] = df_cat["poids_kg"] * df_cat["quantite"]
+                    nb_cat    = df_cat["quantite"].sum()
                     poids_cat = df_cat["poids_total"].sum()
-                    nb_cat = df_cat["quantite"].sum()
+
+                    mask_tir = df_cat["sous_categorie"].apply(is_tir)
+                    df_mel   = df_cat[~mask_tir]
+                    df_tir_c = df_cat[mask_tir]
+
                     with st.expander(f"⚔️ {cat}  —  {int(nb_cat)} objet(s)  •  {poids_cat:.2f} kg", expanded=True):
-                        st.dataframe(
-                            df_cat[["nom","quantite","poids_kg","poids_total","sous_categorie","notes"]].rename(columns={
-                                "nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)",
-                                "poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie","notes":"Notes"
-                            }),
-                            use_container_width=True, hide_index=True
-                        )
+                        if not df_mel.empty:
+                            st.markdown("**Mêlée**")
+                            cols_m, ren_m = _cols_display_melee(df_mel)
+                            base_inv = ["nom","quantite","poids_kg","poids_total","sous_categorie","notes"]
+                            # Ajouter les stats communes si présentes
+                            stat_cols = [c for c in COLS_ARMES_COMMUNES if c in df_mel.columns]
+                            show = [c for c in base_inv + stat_cols if c in df_mel.columns]
+                            ren_m.update({"nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)","poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie"})
+                            st.dataframe(df_mel[show].rename(columns=ren_m), use_container_width=True, hide_index=True)
 
-            # ── Affichage Sur la monture ──
+                        if not df_tir_c.empty:
+                            st.markdown("**Tir**")
+                            cols_t, ren_t = _cols_display_tir(df_tir_c)
+                            base_inv = ["nom","quantite","poids_kg","poids_total","sous_categorie","notes"]
+                            stat_cols = [c for c in ["degats"] + COLS_ARMES_TIR if c in df_tir_c.columns]
+                            show = [c for c in base_inv + stat_cols if c in df_tir_c.columns]
+                            ren_t.update({"nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)","poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie"})
+                            st.dataframe(df_tir_c[show].rename(columns=ren_t), use_container_width=True, hide_index=True)
+
+            _section_joueur(df_soi,     "🧍 Sur soi")
             if monture_actuelle != "Aucune":
-                st.markdown(f"### 🐴 Sur la {monture_actuelle}")
-                if df_monture.empty:
-                    st.caption(f"Aucun objet sur la {monture_actuelle}.")
-                else:
-                    categories_mont = sorted(df_monture["categorie"].dropna().unique().tolist())
-                    for cat in categories_mont:
-                        df_cat = df_monture[df_monture["categorie"] == cat].copy()
-                        poids_cat = df_cat["poids_total"].sum()
-                        nb_cat = df_cat["quantite"].sum()
-                        with st.expander(f"⚔️ {cat}  —  {int(nb_cat)} objet(s)  •  {poids_cat:.2f} kg", expanded=True):
-                            st.dataframe(
-                                df_cat[["nom","quantite","poids_kg","poids_total","sous_categorie","notes"]].rename(columns={
-                                    "nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)",
-                                    "poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie","notes":"Notes"
-                                }),
-                                use_container_width=True, hide_index=True
-                            )
+                _section_joueur(df_monture, f"🐴 Sur la {monture_actuelle}")
 
-            # ── Déplacer / retirer un objet ──
             st.markdown("---")
             c1, c2 = st.columns(2)
             with c1:
@@ -768,46 +961,19 @@ def page_joueur():
 
     with tab2:
         df = load_equipements()
-        if df.empty:
-            st.info("Le catalogue est vide.")
-        else:
+        afficher_catalogue(df, key_prefix="joueur_cat")
+
+        st.markdown("---")
+        st.markdown("##### Ajouter un objet à mon inventaire")
+        if not df.empty:
             c1, c2, c3 = st.columns(3)
             with c1:
-                cats = ["Toutes"] + sorted(df["categorie"].dropna().unique().tolist())
-                cat_filter = st.selectbox("Catégorie", cats, key="jcat")
-            with c2:
-                sub_df = df[df["categorie"] == cat_filter] if cat_filter != "Toutes" else df
-                sous = ["Toutes"] + sorted(sub_df["sous_categorie"].dropna().unique().tolist())
-                sous_filter = st.selectbox("Sous-catégorie", sous, key="jsous")
-            with c3:
-                search = st.text_input("🔍 Rechercher", placeholder="Nom...", key="jsearch")
-
-            filtered = df.copy()
-            if cat_filter  != "Toutes": filtered = filtered[filtered["categorie"]      == cat_filter]
-            if sous_filter != "Toutes": filtered = filtered[filtered["sous_categorie"] == sous_filter]
-            if search:                  filtered = filtered[filtered["nom"].str.contains(search, case=False, na=False)]
-
-            st.markdown(f"**{len(filtered)}** objets")
-            disp = ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes"]
-            disp = [c for c in disp if c in filtered.columns]
-            st.dataframe(
-                filtered[disp].rename(columns={
-                    "categorie":"Catégorie","sous_categorie":"Sous-catégorie",
-                    "nom":"Nom","poids_kg":"Poids (kg)","prix_deniers":"Prix (deniers)","notes":"Notes"
-                }),
-                use_container_width=True, hide_index=True
-            )
-
-            st.markdown("---")
-            st.markdown("##### Ajouter un objet à mon inventaire")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                eq_list = sorted(filtered["nom"].tolist()) if not filtered.empty else sorted(df["nom"].tolist())
+                eq_list   = sorted(df["nom"].tolist())
                 chosen_eq = st.selectbox("Choisir l'objet", eq_list, key="jadd_eq")
             with c2:
                 qty = st.number_input("Quantité", min_value=1, max_value=99, value=1, key="jadd_qty")
             with c3:
-                pinfo2 = load_player_info(user["id"])
+                pinfo2   = load_player_info(user["id"])
                 monture2 = pinfo2.get("monture") or "Aucune"
                 loc_options = ["soi"] + (["monture"] if monture2 != "Aucune" else [])
                 loc_labels  = ["🧍 Sur soi"] + ([f"🐴 Sur la {monture2}"] if monture2 != "Aucune" else [])
