@@ -283,443 +283,18 @@ MONTURES = ["Aucune", "Cheval", "Mule / Âne", "Charrette", "Aligate", "Autre"]
 #  GÉNÉRATION SVG VIA API CLAUDE
 # ─────────────────────────────────────────────
 # ─────────────────────────────────────────────
-#  RECHERCHE D'IMAGES (MULTI-SOURCE)
+#  UPLOAD MANUEL D'ILLUSTRATION
 # ─────────────────────────────────────────────
-
-# Traductions précises nom → mots-clés anglais pour les armes connues
-NOM_EN = {
-    # Épées
-    "Epée gnome": "short sword gnome dagger medieval",
-    "Esparlongue": "estoc thrusting sword medieval slender blade",
-    "Epée cyane": "curved blue steel sword fantasy",
-    "Epée dragonne": "longsword medieval one hand sword",
-    "Epée sorde": "broad sword short medieval guard soldier",
-    "Epée bâtarde": "bastard sword hand and a half medieval",
-    "Double dragonne": "two handed great sword zweihander medieval",
-    # Haches
-    "Ailes de wyvern": "double bladed battle axe two handed wyvern wings",
-    "Cognée gnome": "gnome hand axe short hatchet",
-    "Crapaudine": "hammer axe military pick medieval",
-    "Hache corbaque": "beaked axe crow pick medieval",
-    "Hache de Rien": "barbarian heavy axe medieval",
-    "Lochabre de bévier": "lochaber axe poleaxe long handle",
-    "Pierreuse": "stone maul prehistoric giant club",
-    # Masses
-    "Badine": "thin flexible rod switch cane",
-    "Bâton ogre": "iron shod staff walking stick ogre",
-    "Berger du voleur": "blackjack sap leather club",
-    "Grouine": "spiked club improvised weapon",
-    "Masse de Peton-léger": "flanged mace medieval light",
-    "Massepain": "two handed maul war hammer heavy",
-    "Shokarde": "obsidian club macuahuitl",
-    # Dagues
-    "Dague araignée": "damascus steel dagger spider pattern blade",
-    "Dague Gurkh": "kukri curved blade knife",
-    "Dague pantomarde": "medieval fighting dagger rondel",
-    "Ecorcheur": "hunting knife skinner blade thick",
-    "Paradigne": "parrying dagger ornate medieval",
-    "Senestre": "main gauche parrying dagger left hand",
-    "Thanataire": "stiletto assassin thin blade",
-    # Fléaux
-    "Battefoin": "flail peasant threshing weapon medieval",
-    "Bilboquet": "ball and cup wooden toy weapon",
-    "Flageline": "gnome chain flail small barbed",
-    "Fléau d'Antinéar": "war flail military morning star",
-    "Gueuse": "single ball flail chain mace",
-    "Massacrante": "multi chain barbed flail two handed",
-    "Sagouine": "three chain hook flail medieval",
-    # Lances
-    "Cornicochonne": "boar spear hunting crossguard",
-    "Javelot saure": "stone tipped javelin primitive throwing spear",
-    "Lance cavale": "cavalry lance jousting knight",
-    "Lance cynoférox": "fork polearm catching pole",
-    "Lance souple": "light spear flexible shaft",
-    "Pilum stoliciste": "pilum roman javelin heavy",
-    "Sourdine": "pike infantry long pike phalanx",
-    # Armes d'hast
-    "Hallebarde chuiche": "halberd decorated ornate polearm",
-    "Hastagrave": "voulge glaive polearm blade",
-    "Lance olisienne": "naginata long sword staff polearm",
-    "Pique-bedaine": "ranseur spetum polearm fork",
-    "Pointe sagace": "partisan polearm simple spear",
-    "Thanatosienne": "war scythe polearm peasant blade",
-    "Urticante": "morning star polearm spiked ball staff",
-    # Arbalètes
-    "Arbalète à répétition": "repeating crossbow automatic medieval arbalest",
-    "Arbalète deux-gnomes": "heavy crossbow large siege medieval arbalest",
-    "Arbalète miséricorde": "military crossbow stirrup medieval arbalest",
-    "Arbalète oliphante": "ballista siege crossbow wall mounted medieval",
-    "Arbalète vide": "light crossbow simple medieval arbalest bolt",
-    "Baliste ogre": "ballista giant siege engine medieval trebuchet",
-    "Engrenarbalète": "windlass crossbow ratchet heavy medieval arbalest",
-    # Arcs
-    "Arc à poulie": "compound bow pulley modern",
-    "Arc corsican": "recurve bow medieval compact",
-    "Arc fourreux": "selfbow yew simple hunting bow",
-    "Arc hurleur": "horse bow cavalry short recurve",
-    "Arc logotique": "bone bow composite necromancer",
-    "Arc longus": "english longbow war bow",
-    "Arc méandre": "great bow double curve composite horn",
-    # Armes de poing
-    "Boutefeu": "flare gun single shot pistol",
-    "Dézingueur": "automatic pistol gnome steampunk",
-    "Fée Carabosse": "needle gun crystal dart pistol steampunk",
-    "Mulard": "double barrel pistol break action",
-    "Ordonnancier": "revolver six shot gnome pistol",
-    "Revolver Nikriket": "derringer small pocket pistol",
-    "Squatter Gueunze": "sawn off shotgun pistol grapeshot",
-    # Armes d'épaule
-    "Espingole": "blunderbuss flintlock musket",
-    "Fromager": "drum magazine automatic rifle steampunk",
-    "Fusil à oliphant": "elephant gun large caliber rifle",
-    "Fusil astrologue": "pepperbox revolving rifle multi barrel",
-    "Fusil cyan": "long rifle sniper precision musket",
-    "Fusil-ballon": "rubber ball gun non lethal rifle",
-    "Tromblon": "gnome blunderbuss flared muzzle musket",
-}
-
-def _build_queries(nom: str, sous_categorie: str, notes: str) -> tuple[str, str]:
-    """Retourne (query_fr, query_en) optimisées pour chaque arme."""
-    cat_en = {
-        "Épées": "sword medieval", "Haches": "axe medieval", "Masses": "mace club medieval",
-        "Dagues": "dagger knife medieval", "Fléaux": "flail medieval", "Lances": "spear medieval",
-        "Armes d'hast": "polearm halberd", "Arbalètes": "crossbow medieval",
-        "Arcs": "bow medieval", "Armes de poing": "pistol flintlock", "Armes d'épaule": "musket rifle",
-    }
-    cat_fr = {
-        "Épées": "épée médiévale", "Haches": "hache médiévale", "Masses": "masse arme médiévale",
-        "Dagues": "dague médiévale", "Fléaux": "fléau médiéval", "Lances": "lance médiévale",
-        "Armes d'hast": "hallebarde arme d'hast", "Arbalètes": "arbalète médiévale",
-        "Arcs": "arc médiéval", "Armes de poing": "pistolet ancien", "Armes d'épaule": "fusil ancien mousquet",
-    }
-    # Utiliser les mots-clés spécifiques si disponibles
-    specific_en = NOM_EN.get(nom, "")
-    base_en = cat_en.get(sous_categorie, "weapon")
-    base_fr = cat_fr.get(sous_categorie, "arme")
-
-    if specific_en:
-        query_en = specific_en
-        query_fr = f"{nom} {base_fr}"
-    else:
-        query_en = f"medieval {nom} {base_en}"
-        query_fr = f"{nom} {base_fr}"
-
-    return query_fr, query_en
-
-
-def rechercher_wikimedia(query: str, n: int = 6) -> list[dict]:
-    """Recherche sur Wikimedia Commons via l'API MediaSearch (plein texte, descriptions, catégories)."""
+def image_vers_base64(uploaded_file) -> str | None:
+    """Convertit un fichier uploadé Streamlit en data-URI base64."""
     try:
-        resp = requests.get(
-            "https://commons.wikimedia.org/w/api.php",
-            params={
-                "action":   "query",
-                "format":   "json",
-                "list":     "search",
-                "srnamespace": "6",          # namespace File
-                "srsearch": query,
-                "srlimit":  str(n * 3),
-                "srprop":   "snippet|titlesnippet",
-            },
-            timeout=12
-        )
-        ids = [str(p["pageid"]) for p in resp.json().get("query", {}).get("search", [])]
-        if not ids:
-            return []
-
-        # Récupérer les URLs des miniatures pour les IDs trouvés
-        info_resp = requests.get(
-            "https://commons.wikimedia.org/w/api.php",
-            params={
-                "action":  "query",
-                "format":  "json",
-                "pageids": "|".join(ids[:n * 2]),
-                "prop":    "imageinfo",
-                "iiprop":  "url|mime|thumburl",
-                "iiurlwidth": "400",
-            },
-            timeout=12
-        )
-        results = []
-        exclude = {"fox","wolf","dog","cat","bird","eagle","flower","portrait",
-                   "landscape","tree","renard","loup","chat","chien","oiseau"}
-        for page in info_resp.json().get("query", {}).get("pages", {}).values():
-            ii        = page.get("imageinfo", [{}])[0]
-            url       = ii.get("thumburl") or ii.get("url", "")
-            mime      = ii.get("mime", "")
-            title_raw = page.get("title", "").replace("File:", "")
-            title_low = title_raw.lower()
-            if not url or not mime.startswith("image/"):
-                continue
-            if any(w in title_low for w in exclude):
-                continue
-            results.append({
-                "source": "Wikimedia Commons",
-                "title":  title_raw[:60],
-                "url":    url,
-                "page_url": f"https://commons.wikimedia.org/wiki/{page.get('title','').replace(' ','_')}",
-            })
-            if len(results) >= n:
-                break
-        return results
+        import base64
+        data  = uploaded_file.read()
+        mime  = uploaded_file.type or "image/jpeg"
+        b64   = base64.b64encode(data).decode()
+        return f"data:{mime};base64,{b64}"
     except Exception:
-        return []
-
-
-def rechercher_pixabay(query: str, n: int = 6) -> list[dict]:
-    """Recherche sur Pixabay — photos, illustrations et vecteurs."""
-    try:
-        key = st.secrets.get("PIXABAY_API_KEY", "")
-        if not key:
-            return []
-        results = []
-        seen_urls = set()
-        for img_type in ["all", "illustration", "photo"]:
-            resp = requests.get(
-                "https://pixabay.com/api/",
-                params={
-                    "key":        key,
-                    "q":          query,
-                    "image_type": img_type,
-                    "per_page":   str(n),
-                    "safesearch": "true",
-                    "lang":       "en",
-                    "order":      "relevant",
-                },
-                timeout=10
-            )
-            data = resp.json()
-            for hit in data.get("hits", []):
-                tags = hit.get("tags", "").lower()
-                query_words = [w for w in query.lower().split() if len(w) > 3]
-                # Filtrage souple : au moins UN mot-clé dans les tags
-                if query_words and not any(w in tags for w in query_words):
-                    continue
-                url = hit.get("webformatURL", "")
-                if url and url not in seen_urls:
-                    seen_urls.add(url)
-                    type_label = hit.get("type", img_type)
-                    results.append({
-                        "source": f"Pixabay ({type_label})",
-                        "title":  hit.get("tags", query)[:60],
-                        "url":    url,
-                        "page_url": hit.get("pageURL", ""),
-                    })
-            if len(results) >= n * 2:
-                break
-        return results[:n * 2]
-    except Exception:
-        return []
-
-
-def rechercher_rijksmuseum(query: str, n: int = 6) -> list[dict]:
-    """Recherche dans la collection du Rijksmuseum (Amsterdam) — API publique gratuite."""
-    try:
-        key = st.secrets.get("RIJKSMUSEUM_API_KEY", "0fiuZFh4")  # clé démo publique
-        resp = requests.get(
-            "https://www.rijksmuseum.nl/api/en/collection",
-            params={
-                "key":        key,
-                "q":          query,
-                "imgonly":    "True",
-                "ps":         str(n * 2),
-                "type":       "sword|dagger|axe|crossbow|bow|lance|spear|mace|pistol|musket|rifle|armor|armour|weapon",
-            },
-            timeout=12
-        )
-        data = resp.json()
-        results = []
-        for item in data.get("artObjects", []):
-            web_img = item.get("webImage", {})
-            url = web_img.get("url", "")
-            if not url:
-                continue
-            # Forcer HTTPS et taille raisonnable
-            url = url.replace("http://", "https://")
-            if "=s" not in url:
-                url += "=s400"
-            title = item.get("title", query)
-            maker = item.get("principalOrFirstMaker", "")
-            date  = item.get("dating", {}).get("presentingDate", "")
-            results.append({
-                "source": "Rijksmuseum",
-                "title":  f"{title} — {maker} {date}".strip()[:60],
-                "url":    url,
-                "page_url": item.get("links", {}).get("web", ""),
-            })
-            if len(results) >= n:
-                break
-        return results
-    except Exception:
-        return []
-
-
-def rechercher_europeana(query: str, n: int = 6) -> list[dict]:
-    """Recherche sur Europeana — agrégateur de musées européens, sans clé pour usage basique."""
-    try:
-        resp = requests.get(
-            "https://api.europeana.eu/record/v2/search.json",
-            params={
-                "wskey":   "api2demo",   # clé publique de démo Europeana
-                "query":   query,
-                "qf":      ["TYPE:IMAGE", "RIGHTS:*open*"],
-                "rows":    str(n * 2),
-                "profile": "rich",
-                "sort":    "score desc",
-            },
-            timeout=12
-        )
-        data = resp.json()
-        results = []
-        exclude = {"fox","wolf","dog","cat","bird","flower","portrait",
-                   "landscape","renard","loup","chat","chien","oiseau","person","face"}
-        for item in data.get("items", []):
-            # Récupérer l'URL de l'image (edmIsShownBy ou edmPreview)
-            url = ""
-            for field in ("edmPreview", "edmIsShownBy"):
-                val = item.get(field, [])
-                if isinstance(val, list) and val:
-                    url = val[0]
-                    break
-                elif isinstance(val, str) and val:
-                    url = val
-                    break
-            if not url:
-                continue
-            title = ""
-            for field in ("title", "dcTitleLangAware", "dcDescription"):
-                val = item.get(field, [])
-                if isinstance(val, list) and val:
-                    title = str(val[0])
-                    break
-                elif isinstance(val, str) and val:
-                    title = val
-                    break
-            title_low = title.lower()
-            if any(w in title_low for w in exclude):
-                continue
-            provider = ""
-            prov_val = item.get("dataProvider", [])
-            if isinstance(prov_val, list) and prov_val:
-                provider = prov_val[0]
-            results.append({
-                "source": f"Europeana — {provider}"[:40] if provider else "Europeana",
-                "title":  title[:60] or query,
-                "url":    url,
-                "page_url": item.get("guid", ""),
-            })
-            if len(results) >= n:
-                break
-        return results
-    except Exception:
-        return []
-
-
-def rechercher_met_museum(query: str, n: int = 6) -> list[dict]:
-    """Recherche dans la collection du Metropolitan Museum of Art (API publique, sans clé)."""
-    try:
-        # Étape 1 : recherche des IDs d'objets correspondant à la requête
-        search_resp = requests.get(
-            "https://collectionapi.metmuseum.org/public/collection/v1/search",
-            params={
-                "q": query,
-                "hasImages": "true",
-                "medium": "Arms and Armor,Metalwork",
-            },
-            timeout=10
-        )
-        ids = search_resp.json().get("objectIDs", []) or []
-        if not ids:
-            # Fallback sans filtre medium
-            search_resp2 = requests.get(
-                "https://collectionapi.metmuseum.org/public/collection/v1/search",
-                params={"q": query, "hasImages": "true"},
-                timeout=10
-            )
-            ids = search_resp2.json().get("objectIDs", []) or []
-
-        results = []
-        for obj_id in ids[:n * 3]:  # On en essaie plus pour compenser les sans-image
-            try:
-                obj_resp = requests.get(
-                    f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{obj_id}",
-                    timeout=8
-                )
-                obj = obj_resp.json()
-                img_url = obj.get("primaryImageSmall") or obj.get("primaryImage", "")
-                if not img_url:
-                    continue
-                title = obj.get("title", query)
-                dept  = obj.get("department", "")
-                date  = obj.get("objectDate", "")
-                results.append({
-                    "source": f"Met Museum ({dept})",
-                    "title": f"{title} — {date}"[:60],
-                    "url": img_url,
-                    "page_url": obj.get("objectURL", ""),
-                })
-                if len(results) >= n:
-                    break
-            except Exception:
-                continue
-        return results
-    except Exception:
-        return []
-
-def rechercher_openverse(query: str, n: int = 4) -> list[dict]:
-    """Recherche sur Openverse (images Creative Commons) — sans clé."""
-    try:
-        resp = requests.get(
-            "https://api.openverse.org/v1/images/",
-            params={
-                "q":         query,
-                "page_size": str(n * 2),
-                "mature":    "false",
-                # Toutes licences ouvertes : CC + domaine public
-            },
-            headers={"User-Agent": "RDD-App/1.0"},
-            timeout=10
-        )
-        data = resp.json()
-        results = []
-        query_words = [w.lower() for w in query.split() if len(w) > 3]
-        exclude_words = {"fox","wolf","dog","cat","bird","flower","tree","portrait"}
-        for item in data.get("results", []):
-            url   = item.get("thumbnail") or item.get("url", "")
-            title = (item.get("title") or "").lower()
-            tags  = " ".join(t.get("name","") for t in item.get("tags", [])).lower()
-            combined = title + " " + tags
-            if not url:
-                continue
-            if any(w in combined for w in exclude_words):
-                continue
-            if not any(w in combined for w in query_words):
-                continue
-            results.append({
-                "source": "Openverse (CC)",
-                "title": (item.get("title") or query)[:60],
-                "url": url,
-                "page_url": item.get("foreign_landing_url", ""),
-            })
-            if len(results) >= n:
-                break
-        return results
-    except Exception:
-        return []
-
-
-def telecharger_en_base64(url: str) -> str | None:
-    """Télécharge une image et la convertit en base64 data-URI."""
-    try:
-        resp = requests.get(url, timeout=15, headers={"User-Agent": "RDD-App/1.0"})
-        if resp.status_code == 200:
-            import base64
-            mime = resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
-            b64  = base64.b64encode(resp.content).decode()
-            return f"data:{mime};base64,{b64}"
-    except Exception:
-        pass
-    return None
+        return None
 
 
 def generer_svg_arme(nom: str, sous_categorie: str, notes: str, degats: str = "") -> str | None:
@@ -795,92 +370,59 @@ def _afficher_image_stockee(data_uri: str, nom: str):
 
 
 def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: str = ""):
-    """Affiche l'expander avec illustration pour une arme (image ou SVG)."""
-    nom      = str(row.get("nom", ""))
-    stockee  = row.get("svg_illustration", "") or ""
-    sous_cat = str(row.get("sous_categorie", ""))
-    notes    = str(row.get("notes", "") or "")
-    degats   = str(row.get("degats", "") or "")
-    eq_id    = row.get("id", None)
+    """Affiche l'expander avec illustration pour une arme — upload drag & drop pour l'admin."""
+    nom     = str(row.get("nom", ""))
+    stockee = row.get("svg_illustration", "") or ""
+    sous_cat= str(row.get("sous_categorie", ""))
+    notes   = str(row.get("notes", "") or "")
+    degats  = str(row.get("degats", "") or "")
+    eq_id   = row.get("id", None)
 
-    has_img  = bool(stockee and (stockee.startswith("data:image/") or stockee.strip().startswith("<svg")))
-    icon     = "🖼️" if has_img else "✦"
+    has_img = bool(stockee and (stockee.startswith("data:image/") or stockee.strip().startswith("<svg")))
+    icon    = "🖼️" if has_img else "✦"
 
     with st.expander(f"{icon} {nom}"):
         if has_img:
             _afficher_image_stockee(stockee, nom)
+            if is_admin and eq_id is not None:
+                if st.button("🗑️ Supprimer l'illustration", key=f"del_img_{key_prefix}_{eq_id}"):
+                    execute("UPDATE equipements SET svg_illustration=NULL WHERE id=%s", (int(eq_id),))
+                    invalidate_cache()
+                    st.success("Illustration supprimée.")
+                    st.rerun()
         else:
             st.caption("Aucune illustration pour cette arme.")
 
-        # ── ADMIN : outils de recherche + génération SVG ──
+        # ── ADMIN : upload drag & drop ──
         if is_admin and eq_id is not None:
             st.markdown("---")
-
-            # Recherche d'images
-            search_key = f"img_search_{key_prefix}_{eq_id}"
-            if st.button("🔍 Rechercher des illustrations", key=f"btn_search_{key_prefix}_{eq_id}"):
-                query_fr, query_en = _build_queries(nom, sous_cat, notes)
-                sources_status = {}
-                with st.spinner("Recherche en cours sur 6 sources..."):
-                    results = []
-
-                    def _fetch(fn, *args, label="", **kwargs):
-                        try:
-                            r = fn(*args, **kwargs)
-                            sources_status[label] = len(r)
-                            return r
-                        except Exception as e:
-                            sources_status[label] = f"❌ {e}"
-                            return []
-
-                    results += _fetch(rechercher_met_museum,  query_en, n=6,  label="Met Museum")
-                    results += _fetch(rechercher_rijksmuseum, query_en, n=6,  label="Rijksmuseum")
-                    results += _fetch(rechercher_europeana,   query_en, n=5,  label="Europeana EN")
-                    results += _fetch(rechercher_europeana,   query_fr, n=4,  label="Europeana FR")
-                    results += _fetch(rechercher_wikimedia,   query_fr, n=5,  label="Wikimedia FR")
-                    results += _fetch(rechercher_wikimedia,   query_en, n=5,  label="Wikimedia EN")
-                    results += _fetch(rechercher_pixabay,     query_en, n=6,  label="Pixabay")
-                    results += _fetch(rechercher_openverse,   query_en, n=4,  label="Openverse")
-
-                    # Dédoublonnage par URL
-                    seen, unique = set(), []
-                    for r in results:
-                        if r["url"] not in seen:
-                            seen.add(r["url"])
-                            unique.append(r)
-                    results = unique
-
-                # Afficher le statut des sources dans un expander discret
-                with st.expander("📡 Détail des sources", expanded=False):
-                    for src, count in sources_status.items():
-                        icon = "✅" if isinstance(count, int) else "⚠️"
-                        st.caption(f"{icon} **{src}** : {count} résultat(s)" if isinstance(count, int) else f"{icon} **{src}** : {count}")
-                st.session_state[search_key] = results
-
-            # Afficher la galerie si des résultats sont en session
-            results = st.session_state.get(search_key, [])
-            if results:
-                st.markdown(f"**{len(results)} résultats trouvés** — cliquez sur une image pour la sélectionner :")
-                cols = st.columns(4)
-                for idx, item in enumerate(results):
-                    with cols[idx % 4]:
-                        st.image(item["url"], caption=f"{item['source']}", use_container_width=True)
-                        if st.button("✅ Choisir", key=f"pick_{key_prefix}_{eq_id}_{idx}"):
-                            with st.spinner("Téléchargement en cours..."):
-                                b64 = telecharger_en_base64(item["url"])
-                            if b64:
-                                execute("UPDATE equipements SET svg_illustration=%s WHERE id=%s",
-                                        (b64, int(eq_id)))
-                                invalidate_cache()
-                                del st.session_state[search_key]
-                                st.success("Image sauvegardée !")
-                                st.rerun()
-                            else:
-                                st.error("Impossible de télécharger cette image.")
+            uploaded = st.file_uploader(
+                "🖼️ Glissez-déposez ou choisissez une image",
+                type=["png", "jpg", "jpeg", "webp", "gif", "svg"],
+                key=f"upload_{key_prefix}_{eq_id}",
+                help="PNG, JPG, WEBP, GIF ou SVG — sera stocké en base"
+            )
+            if uploaded is not None:
+                # Aperçu immédiat
+                st.image(uploaded, caption="Aperçu", width=200)
+                if st.button("✅ Valider cette image", key=f"save_img_{key_prefix}_{eq_id}"):
+                    if uploaded.type == "image/svg+xml":
+                        # SVG : stocker le texte brut
+                        svg_text = uploaded.read().decode("utf-8", errors="ignore")
+                        execute("UPDATE equipements SET svg_illustration=%s WHERE id=%s",
+                                (svg_text, int(eq_id)))
+                    else:
+                        b64 = image_vers_base64(uploaded)
+                        if b64:
+                            execute("UPDATE equipements SET svg_illustration=%s WHERE id=%s",
+                                    (b64, int(eq_id)))
+                    invalidate_cache()
+                    st.success(f"Illustration de « {nom} » sauvegardée !")
+                    st.rerun()
 
             st.markdown("")
             # Génération SVG par Claude (option secondaire)
-            with st.expander("🎨 Générer une illustration SVG avec Claude"):
+            with st.expander("🎨 Générer un SVG avec Claude"):
                 btn_lbl = "Regénérer le SVG" if has_img and stockee.strip().startswith("<svg") else "Générer un SVG"
                 if st.button(btn_lbl, key=f"gen_svg_{key_prefix}_{eq_id}"):
                     with st.spinner(f"Génération SVG de « {nom} »..."):
@@ -893,7 +435,6 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
                         st.rerun()
                     else:
                         st.error("La génération a échoué.")
-
 # ─────────────────────────────────────────────
 #  HELPERS D'AFFICHAGE DU CATALOGUE
 # ─────────────────────────────────────────────
