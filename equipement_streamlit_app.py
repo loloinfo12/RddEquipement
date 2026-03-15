@@ -286,17 +286,26 @@ MONTURES = ["Aucune", "Cheval", "Mule / Âne", "Charrette", "Aligate", "Autre"]
 #  RECHERCHE D'IMAGES (MULTI-SOURCE)
 # ─────────────────────────────────────────────
 
-def _build_query(nom: str, sous_categorie: str, notes: str) -> str:
-    """Construit une requête de recherche en anglais à partir des infos de l'arme."""
-    # Traductions basiques des catégories
+def _build_queries(nom: str, sous_categorie: str, notes: str) -> tuple[str, str]:
+    """Retourne (query_fr, query_en) pour la recherche multi-langue."""
     cat_en = {
         "Épées": "sword", "Haches": "axe", "Masses": "mace club",
         "Dagues": "dagger knife", "Fléaux": "flail", "Lances": "spear lance",
         "Armes d'hast": "polearm halberd", "Arbalètes": "crossbow",
         "Arcs": "bow archery", "Armes de poing": "pistol", "Armes d'épaule": "rifle musket",
     }
-    base = cat_en.get(sous_categorie, sous_categorie)
-    return f"medieval {nom} {base} weapon fantasy"
+    cat_fr = {
+        "Épées": "épée", "Haches": "hache", "Masses": "masse massue",
+        "Dagues": "dague couteau", "Fléaux": "fléau", "Lances": "lance épieu",
+        "Armes d'hast": "hallebarde pertuisane", "Arbalètes": "arbalète",
+        "Arcs": "arc archerie", "Armes de poing": "pistolet", "Armes d'épaule": "fusil mousquet",
+    }
+    base_en = cat_en.get(sous_categorie, sous_categorie)
+    base_fr = cat_fr.get(sous_categorie, sous_categorie)
+
+    query_en = f"medieval {nom} {base_en} weapon fantasy"
+    query_fr = f"médiéval {nom} {base_fr} arme"
+    return query_fr, query_en
 
 
 def rechercher_wikimedia(query: str, n: int = 5) -> list[dict]:
@@ -495,12 +504,24 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
             # Recherche d'images
             search_key = f"img_search_{key_prefix}_{eq_id}"
             if st.button("🔍 Rechercher des illustrations", key=f"btn_search_{key_prefix}_{eq_id}"):
-                query = _build_query(nom, sous_cat, notes)
-                with st.spinner("Recherche en cours sur Wikimedia, Openverse, Pixabay..."):
+                query_fr, query_en = _build_queries(nom, sous_cat, notes)
+                with st.spinner("Recherche en cours (FR + EN) sur Wikimedia, Openverse, Pixabay..."):
                     results = []
-                    results += rechercher_wikimedia(query, n=4)
-                    results += rechercher_openverse(query, n=4)
-                    results += rechercher_pixabay(query, n=4)
+                    # Recherche en français
+                    results += rechercher_wikimedia(query_fr, n=3)
+                    results += rechercher_openverse(query_fr, n=3)
+                    results += rechercher_pixabay(query_fr, n=3)
+                    # Recherche en anglais
+                    results += rechercher_wikimedia(query_en, n=3)
+                    results += rechercher_openverse(query_en, n=3)
+                    results += rechercher_pixabay(query_en, n=3)
+                    # Dédoublonnage par URL
+                    seen, unique = set(), []
+                    for r in results:
+                        if r["url"] not in seen:
+                            seen.add(r["url"])
+                            unique.append(r)
+                    results = unique
                 st.session_state[search_key] = results
 
             # Afficher la galerie si des résultats sont en session
