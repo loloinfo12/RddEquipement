@@ -166,15 +166,11 @@ hr { border-color: var(--gold) !important; opacity: 0.3; }
 # ─────────────────────────────────────────────
 #  COLONNES ARMES
 # ─────────────────────────────────────────────
-# Colonnes communes à toutes les armes
 COLS_ARMES_COMMUNES = ["degats", "mains", "force_requise", "resistance"]
-# Colonnes spécifiques aux armes de tir
 COLS_ARMES_TIR      = ["m_distance", "portee_max", "magasin", "tir_rechargement"]
 
-# Sous-catégories considérées comme armes de tir
 SOUS_CAT_TIR = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule"}
 
-# Labels affichables
 LABELS_COMMUNES = {
     "degats":        "Dégâts",
     "mains":         "Mains",
@@ -280,13 +276,9 @@ def invalidate_cache():
 MONTURES = ["Aucune", "Cheval", "Mule / Âne", "Charrette", "Aligate", "Autre"]
 
 # ─────────────────────────────────────────────
-#  GÉNÉRATION SVG VIA API CLAUDE
-# ─────────────────────────────────────────────
-# ─────────────────────────────────────────────
 #  UPLOAD MANUEL D'ILLUSTRATION
 # ─────────────────────────────────────────────
 def image_vers_base64(uploaded_file) -> str | None:
-    """Convertit un fichier uploadé Streamlit en data-URI base64."""
     try:
         import base64
         data = uploaded_file.read()
@@ -298,7 +290,6 @@ def image_vers_base64(uploaded_file) -> str | None:
 
 
 def telecharger_url_base64(url: str) -> str | None:
-    """Télécharge une image depuis une URL et retourne un data-URI base64."""
     try:
         import base64
         resp = requests.get(
@@ -318,7 +309,6 @@ def telecharger_url_base64(url: str) -> str | None:
 
 
 def generer_svg_arme(nom: str, sous_categorie: str, notes: str, degats: str = "") -> str | None:
-    """Appelle l'API Claude pour générer un SVG illustrant l'arme."""
     prompt = f"""Tu es un illustrateur médiéval spécialisé dans les armes fantasy.
 Crée un SVG 300×400 illustrant cette arme de manière artistique, dans un style gravure médiévale sur parchemin clair.
 
@@ -368,7 +358,6 @@ Règles ABSOLUES — respecte-les toutes sans exception :
 
 
 def _afficher_image_stockee(data_uri: str, nom: str):
-    """Affiche une image stockée en base64 ou un SVG."""
     if data_uri.startswith("data:image/"):
         st.markdown(f"""
         <div style="border:2px solid #b8860b;border-radius:6px;padding:8px;
@@ -390,7 +379,6 @@ def _afficher_image_stockee(data_uri: str, nom: str):
 
 
 def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: str = ""):
-    """Affiche l'expander avec illustration pour une arme — upload drag & drop pour l'admin."""
     nom     = str(row.get("nom", ""))
     stockee = row.get("svg_illustration", "") or ""
     sous_cat= str(row.get("sous_categorie", ""))
@@ -413,7 +401,6 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
         else:
             st.caption("Aucune illustration pour cette arme.")
 
-        # ── ADMIN : ajout d'illustration ──
         if is_admin and eq_id is not None:
             st.markdown("---")
 
@@ -424,7 +411,6 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
                 key=f"method_{key_prefix}_{eq_id}"
             )
 
-            # ── Option 1 : URL (clic droit → Copier l'adresse de l'image) ──
             if method == "🔗 Coller une URL":
                 st.caption("Clic droit sur n'importe quelle image dans votre navigateur → **Copier l'adresse de l'image** → coller ici")
                 url_input = st.text_input(
@@ -449,7 +435,6 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
                     except Exception:
                         st.warning("URL invalide ou image inaccessible.")
 
-            # ── Option 2 : upload fichier classique ──
             else:
                 uploaded = st.file_uploader(
                     "Glissez-déposez ou choisissez un fichier",
@@ -473,7 +458,6 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
                         st.rerun()
 
             st.markdown("")
-            # Génération SVG par Claude (option secondaire)
             with st.expander("🎨 Générer un SVG avec Claude"):
                 btn_lbl = "Regénérer le SVG" if has_img and stockee.strip().startswith("<svg") else "Générer un SVG"
                 if st.button(btn_lbl, key=f"gen_svg_{key_prefix}_{eq_id}"):
@@ -487,11 +471,11 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
                         st.rerun()
                     else:
                         st.error("La génération a échoué.")
+
 # ─────────────────────────────────────────────
 #  HELPERS D'AFFICHAGE DU CATALOGUE
 # ─────────────────────────────────────────────
 def _cols_display_melee(df: pd.DataFrame) -> tuple[list, dict]:
-    """Retourne (liste_cols, rename_dict) pour les armes de mêlée."""
     base  = ["categorie","sous_categorie","nom","poids_kg","prix_deniers"]
     stats = [c for c in COLS_ARMES_COMMUNES if c in df.columns]
     extra = ["notes"]
@@ -504,9 +488,8 @@ def _cols_display_melee(df: pd.DataFrame) -> tuple[list, dict]:
     return cols, rename
 
 def _cols_display_tir(df: pd.DataFrame) -> tuple[list, dict]:
-    """Retourne (liste_cols, rename_dict) pour les armes de tir."""
     base  = ["categorie","sous_categorie","nom","poids_kg","prix_deniers"]
-    stats = [c for c in COLS_ARMES_COMMUNES[:1] + COLS_ARMES_TIR if c in df.columns]  # juste dégâts + tir
+    stats = [c for c in COLS_ARMES_COMMUNES[:1] + COLS_ARMES_TIR if c in df.columns]
     extra = ["notes"]
     cols  = [c for c in base + stats + extra if c in df.columns]
     rename = {
@@ -518,7 +501,6 @@ def _cols_display_tir(df: pd.DataFrame) -> tuple[list, dict]:
     return cols, rename
 
 def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat", is_admin: bool = False):
-    """Widget de catalogue filtrable avec onglets mêlée / tir et illustrations."""
     if df.empty:
         st.info("Le catalogue est vide.")
         return
@@ -633,6 +615,10 @@ def page_admin():
 
             with st.form(key="form_edit_arme"):
                 st.markdown(f"**{to_edit}** — *{sous_cat_edit}*")
+
+                # ── Champ Notes en pleine largeur ──
+                edit_notes = st.text_input("Notes", value=str(row_edit.get("notes") or ""))
+
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
                     edit_degats = st.text_input("Dégâts", value=str(row_edit.get("degats") or ""))
@@ -657,10 +643,11 @@ def page_admin():
                     if tir_mode:
                         execute("""
                             UPDATE equipements
-                            SET degats=%s, mains=%s, force_requise=%s, resistance=%s,
+                            SET notes=%s, degats=%s, mains=%s, force_requise=%s, resistance=%s,
                                 m_distance=%s, portee_max=%s, magasin=%s, tir_rechargement=%s
                             WHERE id=%s
                         """, (
+                            edit_notes or None,
                             edit_degats or None, edit_mains or None,
                             edit_force  or None, edit_res   or None,
                             edit_m_dist or None, edit_portee or None,
@@ -670,9 +657,10 @@ def page_admin():
                     else:
                         execute("""
                             UPDATE equipements
-                            SET degats=%s, mains=%s, force_requise=%s, resistance=%s
+                            SET notes=%s, degats=%s, mains=%s, force_requise=%s, resistance=%s
                             WHERE id=%s
                         """, (
+                            edit_notes or None,
                             edit_degats or None, edit_mains or None,
                             edit_force  or None, edit_res   or None,
                             eq_id_edit
@@ -798,7 +786,6 @@ def page_admin():
                 else:
                     df_import = pd.concat(frames, ignore_index=True)
 
-                    # Nettoyage des colonnes numériques
                     if "poids_kg" in df_import.columns:
                         df_import["poids_kg"] = df_import["poids_kg"].astype(str).str.replace(",", ".").pipe(pd.to_numeric, errors="coerce").fillna(0.0)
                     else:
@@ -1134,7 +1121,6 @@ def page_joueur():
                             st.markdown("**Mêlée**")
                             cols_m, ren_m = _cols_display_melee(df_mel)
                             base_inv = ["nom","quantite","poids_kg","poids_total","sous_categorie","notes"]
-                            # Ajouter les stats communes si présentes
                             stat_cols = [c for c in COLS_ARMES_COMMUNES if c in df_mel.columns]
                             show = [c for c in base_inv + stat_cols if c in df_mel.columns]
                             ren_m.update({"nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)","poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie"})
