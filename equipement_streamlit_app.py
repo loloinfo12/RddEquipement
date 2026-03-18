@@ -169,7 +169,7 @@ hr { border-color: var(--gold) !important; opacity: 0.3; }
 COLS_ARMES_COMMUNES = ["degats", "mains", "force_requise", "resistance"]
 COLS_ARMES_TIR      = ["m_distance", "portee_max", "magasin", "tir_rechargement"]
 
-SOUS_CAT_TIR = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule"}
+SOUS_CAT_TIR = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde"}
 
 LABELS_COMMUNES = {
     "degats":        "Dégâts",
