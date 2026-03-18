@@ -750,7 +750,7 @@ def page_admin():
         c1, c2 = st.columns(2)
         with c1:
             new_cat   = st.text_input("Catégorie", value="Armes")
-            new_sous  = st.text_input("Sous-catégorie")
+            new_sous  = st.selectbox("Sous-catégorie", TOUTES_SOUS_CATEGORIES, key="add_sous_cat")
             new_nom   = st.text_input("Nom de l'objet")
             new_notes = st.text_input("Notes (optionnel)")
         with c2:
@@ -761,7 +761,8 @@ def page_admin():
             new_force = st.text_input("Force requise",      placeholder="ex: 11")
             new_res   = st.text_input("Résistance",         placeholder="ex: 12")
 
-        tir_mode_new = is_tir(new_sous)
+        tir_mode_new    = is_tir(new_sous)
+        lancer_mode_new = is_lancer(new_sous)
         if tir_mode_new:
             st.markdown("**Spécifique armes de tir**")
             c1t, c2t, c3t, c4t = st.columns(4)
@@ -769,6 +770,12 @@ def page_admin():
             with c2t: new_portee  = st.text_input("Portée max")
             with c3t: new_magasin = st.text_input("Magasin")
             with c4t: new_tir_r   = st.text_input("Tir/Rechargement")
+        elif lancer_mode_new:
+            st.markdown("**Spécifique armes de lancer**")
+            c1t, c2t = st.columns(2)
+            with c1t: new_m_dist = st.text_input("M. distance")
+            with c2t: new_portee = st.text_input("Portée max")
+            new_magasin = new_tir_r = ""
         else:
             new_m_dist = new_portee = new_magasin = new_tir_r = ""
 
