@@ -168,8 +168,19 @@ hr { border-color: var(--gold) !important; opacity: 0.3; }
 # ─────────────────────────────────────────────
 COLS_ARMES_COMMUNES = ["degats", "mains", "force_requise", "resistance"]
 COLS_ARMES_TIR      = ["m_distance", "portee_max", "magasin", "tir_rechargement"]
+COLS_ARMES_LANCER   = ["m_distance", "portee_max"]
 
-SOUS_CAT_TIR = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde"}
+# Sous-catégories considérées comme armes de tir
+SOUS_CAT_TIR    = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde"}
+# Sous-catégories considérées comme armes de lancer
+SOUS_CAT_LANCER = {"Armes de lancer"}
+
+# Toutes les sous-catégories disponibles (pour le selectbox admin)
+TOUTES_SOUS_CATEGORIES = sorted([
+    "Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde", "Armes de lancer",
+    "Épées à une main", "Épées à deux mains", "Hache à une main", "Haches à deux mains",
+    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Autre",
+])
 
 LABELS_COMMUNES = {
     "degats":        "Dégâts",
@@ -183,9 +194,16 @@ LABELS_TIR = {
     "magasin":          "Magasin",
     "tir_rechargement": "Tir/Rechargement",
 }
+LABELS_LANCER = {
+    "m_distance": "M. distance",
+    "portee_max": "Portée max",
+}
 
 def is_tir(sous_categorie: str) -> bool:
     return str(sous_categorie) in SOUS_CAT_TIR
+
+def is_lancer(sous_categorie: str) -> bool:
+    return str(sous_categorie) in SOUS_CAT_LANCER
 
 # ─────────────────────────────────────────────
 #  CONNEXION NEON
@@ -500,6 +518,19 @@ def _cols_display_tir(df: pd.DataFrame) -> tuple[list, dict]:
     }
     return cols, rename
 
+def _cols_display_lancer(df: pd.DataFrame) -> tuple[list, dict]:
+    base  = ["categorie","sous_categorie","nom","poids_kg","prix_deniers"]
+    stats = [c for c in COLS_ARMES_COMMUNES + COLS_ARMES_LANCER if c in df.columns]
+    extra = ["notes"]
+    cols  = [c for c in base + stats + extra if c in df.columns]
+    rename = {
+        "categorie":"Catégorie","sous_categorie":"Sous-catégorie",
+        "nom":"Nom","poids_kg":"Poids (kg)","prix_deniers":"Prix (deniers)","notes":"Notes",
+        **{k: v for k, v in LABELS_COMMUNES.items()},
+        **{k: v for k, v in LABELS_LANCER.items()},
+    }
+    return cols, rename
+
 def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat", is_admin: bool = False):
     if df.empty:
         st.info("Le catalogue est vide.")
@@ -523,11 +554,17 @@ def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat", is_admin: bool
 
     st.markdown(f"**{len(filtered)}** objet(s) trouvé(s)")
 
-    mask_tir = filtered["sous_categorie"].apply(is_tir) if "sous_categorie" in filtered.columns else pd.Series(False, index=filtered.index)
-    df_melee = filtered[~mask_tir]
-    df_tir   = filtered[mask_tir]
+    mask_tir    = filtered["sous_categorie"].apply(is_tir)    if "sous_categorie" in filtered.columns else pd.Series(False, index=filtered.index)
+    mask_lancer = filtered["sous_categorie"].apply(is_lancer) if "sous_categorie" in filtered.columns else pd.Series(False, index=filtered.index)
+    df_melee  = filtered[~mask_tir & ~mask_lancer]
+    df_tir    = filtered[mask_tir]
+    df_lancer = filtered[mask_lancer]
 
-    tab_melee, tab_tir = st.tabs([f"⚔️ Armes de mêlée ({len(df_melee)})", f"🏹 Armes de tir ({len(df_tir)})"])
+    tab_melee, tab_tir, tab_lancer = st.tabs([
+        f"⚔️ Armes de mêlée ({len(df_melee)})",
+        f"🏹 Armes de tir ({len(df_tir)})",
+        f"🎯 Armes de lancer ({len(df_lancer)})",
+    ])
 
     def _render_section(df_section, cols_fn, tab_prefix):
         if df_section.empty:
@@ -553,6 +590,9 @@ def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat", is_admin: bool
 
     with tab_tir:
         _render_section(df_tir, _cols_display_tir, f"{key_prefix}_tir")
+
+    with tab_lancer:
+        _render_section(df_lancer, _cols_display_lancer, f"{key_prefix}_lan")
 
 # ─────────────────────────────────────────────
 #  SESSION STATE
@@ -611,10 +651,18 @@ def page_admin():
             eq_id_edit = int(row_edit["id"])
 
             sous_cat_edit = str(row_edit.get("sous_categorie", ""))
-            tir_mode = is_tir(sous_cat_edit)
+            tir_mode    = is_tir(sous_cat_edit)
+            lancer_mode = is_lancer(sous_cat_edit)
 
             with st.form(key="form_edit_arme"):
-                st.markdown(f"**{to_edit}** — *{sous_cat_edit}*")
+                st.markdown(f"**{to_edit}**")
+
+                # ── Sous-catégorie modifiable ──
+                all_sous = TOUTES_SOUS_CATEGORIES.copy()
+                if sous_cat_edit and sous_cat_edit not in all_sous:
+                    all_sous = sorted(all_sous + [sous_cat_edit])
+                sous_idx = all_sous.index(sous_cat_edit) if sous_cat_edit in all_sous else 0
+                edit_sous_cat = st.selectbox("Sous-catégorie", all_sous, index=sous_idx)
 
                 # ── Champ Notes en pleine largeur ──
                 edit_notes = st.text_input("Notes", value=str(row_edit.get("notes") or ""))
@@ -627,15 +675,15 @@ def page_admin():
                     edit_force = st.text_input("Force requise", value=str(row_edit.get("force_requise") or ""))
                     edit_res   = st.text_input("Résistance",    value=str(row_edit.get("resistance")    or ""))
                 with c3:
-                    if tir_mode:
+                    if tir_mode or lancer_mode:
                         edit_m_dist = st.text_input("M. distance", value=str(row_edit.get("m_distance") or ""))
                         edit_portee = st.text_input("Portée max",  value=str(row_edit.get("portee_max") or ""))
                     else:
                         edit_m_dist = edit_portee = ""
                 with c4:
                     if tir_mode:
-                        edit_magasin = st.text_input("Magasin",            value=str(row_edit.get("magasin")          or ""))
-                        edit_tir_rech= st.text_input("Tir/Rechargement",   value=str(row_edit.get("tir_rechargement") or ""))
+                        edit_magasin = st.text_input("Magasin",          value=str(row_edit.get("magasin")          or ""))
+                        edit_tir_rech= st.text_input("Tir/Rechargement", value=str(row_edit.get("tir_rechargement") or ""))
                     else:
                         edit_magasin = edit_tir_rech = ""
 
@@ -643,10 +691,11 @@ def page_admin():
                     if tir_mode:
                         execute("""
                             UPDATE equipements
-                            SET notes=%s, degats=%s, mains=%s, force_requise=%s, resistance=%s,
+                            SET sous_categorie=%s, notes=%s, degats=%s, mains=%s, force_requise=%s, resistance=%s,
                                 m_distance=%s, portee_max=%s, magasin=%s, tir_rechargement=%s
                             WHERE id=%s
                         """, (
+                            edit_sous_cat,
                             edit_notes or None,
                             edit_degats or None, edit_mains or None,
                             edit_force  or None, edit_res   or None,
@@ -654,12 +703,27 @@ def page_admin():
                             edit_magasin or None, edit_tir_rech or None,
                             eq_id_edit
                         ))
+                    elif lancer_mode:
+                        execute("""
+                            UPDATE equipements
+                            SET sous_categorie=%s, notes=%s, degats=%s, mains=%s, force_requise=%s, resistance=%s,
+                                m_distance=%s, portee_max=%s
+                            WHERE id=%s
+                        """, (
+                            edit_sous_cat,
+                            edit_notes or None,
+                            edit_degats or None, edit_mains or None,
+                            edit_force  or None, edit_res   or None,
+                            edit_m_dist or None, edit_portee or None,
+                            eq_id_edit
+                        ))
                     else:
                         execute("""
                             UPDATE equipements
-                            SET notes=%s, degats=%s, mains=%s, force_requise=%s, resistance=%s
+                            SET sous_categorie=%s, notes=%s, degats=%s, mains=%s, force_requise=%s, resistance=%s
                             WHERE id=%s
                         """, (
+                            edit_sous_cat,
                             edit_notes or None,
                             edit_degats or None, edit_mains or None,
                             edit_force  or None, edit_res   or None,
@@ -894,9 +958,11 @@ def page_admin():
                     for cat in sorted(df_section["categorie"].dropna().unique()):
                         df_c = df_section[df_section["categorie"] == cat].copy()
                         df_c["poids_total"] = df_c["poids_kg"] * df_c["quantite"]
-                        mask_tir  = df_c["sous_categorie"].apply(is_tir)
-                        df_c_mel  = df_c[~mask_tir]
-                        df_c_tir  = df_c[mask_tir]
+                        mask_tir    = df_c["sous_categorie"].apply(is_tir)
+                        mask_lancer = df_c["sous_categorie"].apply(is_lancer)
+                        df_c_mel    = df_c[~mask_tir & ~mask_lancer]
+                        df_c_tir    = df_c[mask_tir]
+                        df_c_lancer = df_c[mask_lancer]
 
                         with st.expander(f"{label_icon} {cat}  •  {df_c['poids_total'].sum():.2f} kg", expanded=False):
                             if not df_c_mel.empty:
@@ -913,6 +979,13 @@ def page_admin():
                                 cols_show = [c for c in extra_inv + cols_t if c in df_c_tir.columns]
                                 ren_t.update({"quantite":"Qté","poids_total":"Poids total","localisation":"Lieu"})
                                 st.dataframe(df_c_tir[cols_show].rename(columns=ren_t), use_container_width=True, hide_index=True)
+                            if not df_c_lancer.empty:
+                                st.markdown("*Lancer*")
+                                cols_l, ren_l = _cols_display_lancer(df_c_lancer)
+                                extra_inv = ["quantite", "poids_total", "localisation"]
+                                cols_show = [c for c in extra_inv + cols_l if c in df_c_lancer.columns]
+                                ren_l.update({"quantite":"Qté","poids_total":"Poids total","localisation":"Lieu"})
+                                st.dataframe(df_c_lancer[cols_show].rename(columns=ren_l), use_container_width=True, hide_index=True)
 
                 st.markdown("**🧍 Sur soi**")
                 if df_soi.empty:
@@ -1112,9 +1185,11 @@ def page_joueur():
                     nb_cat    = df_cat["quantite"].sum()
                     poids_cat = df_cat["poids_total"].sum()
 
-                    mask_tir = df_cat["sous_categorie"].apply(is_tir)
-                    df_mel   = df_cat[~mask_tir]
-                    df_tir_c = df_cat[mask_tir]
+                    mask_tir    = df_cat["sous_categorie"].apply(is_tir)
+                    mask_lancer = df_cat["sous_categorie"].apply(is_lancer)
+                    df_mel      = df_cat[~mask_tir & ~mask_lancer]
+                    df_tir_c    = df_cat[mask_tir]
+                    df_lan_c    = df_cat[mask_lancer]
 
                     with st.expander(f"⚔️ {cat}  —  {int(nb_cat)} objet(s)  •  {poids_cat:.2f} kg", expanded=True):
                         if not df_mel.empty:
@@ -1134,6 +1209,15 @@ def page_joueur():
                             show = [c for c in base_inv + stat_cols if c in df_tir_c.columns]
                             ren_t.update({"nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)","poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie"})
                             st.dataframe(df_tir_c[show].rename(columns=ren_t), use_container_width=True, hide_index=True)
+
+                        if not df_lan_c.empty:
+                            st.markdown("**Lancer**")
+                            cols_l, ren_l = _cols_display_lancer(df_lan_c)
+                            base_inv = ["nom","quantite","poids_kg","poids_total","sous_categorie","notes"]
+                            stat_cols = [c for c in COLS_ARMES_COMMUNES + COLS_ARMES_LANCER if c in df_lan_c.columns]
+                            show = [c for c in base_inv + stat_cols if c in df_lan_c.columns]
+                            ren_l.update({"nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)","poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie"})
+                            st.dataframe(df_lan_c[show].rename(columns=ren_l), use_container_width=True, hide_index=True)
 
             _section_joueur(df_soi,     "🧍 Sur soi")
             if monture_actuelle != "Aucune":
