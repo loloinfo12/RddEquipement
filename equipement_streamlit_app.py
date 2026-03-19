@@ -1153,14 +1153,161 @@ def page_admin():
             st.info("Aucun joueur enregistré.")
 
 # ─────────────────────────────────────────────
+#  CONTENEURS
+# ─────────────────────────────────────────────
+# Mapping conteneur → localisation BDD (soi / monture)
+CONTENEURS_SOI = ["Porté sur soi", "Sac à dos", "Ceinturon", "Bourse", "Outre / Gourde", "Etui"]
+CONTENEURS_MONTURE = ["Monture"]
+
+CONTENEUR_ICONE = {
+    "Porté sur soi":   "🧍",
+    "Sac à dos":       "🎒",
+    "Ceinturon":       "👜",
+    "Bourse":          "💰",
+    "Outre / Gourde":  "🫙",
+    "Etui":            "📦",
+    "Monture":         "🐴",
+}
+
+ICONES_DISPO = ["🗃️","🎒","💼","👝","🧳","📫","🪣","🧺","🛒","⚗️","🗡️","🏹","🪬","📿","🧲","🪤","🎣","🛡️","🔮","📜"]
+
+def conteneur_to_localisation(conteneur: str) -> str:
+    return "monture" if conteneur in CONTENEURS_MONTURE else "soi"
+
+@st.cache_data(ttl=30)
+def load_conteneurs_joueur(player_id: int) -> list:
+    """Charge les conteneurs personnalisés du joueur."""
+    rows = query(
+        "SELECT id, nom, icone FROM conteneurs_joueur WHERE player_id=%s ORDER BY id",
+        (player_id,)
+    )
+    return [dict(r) for r in rows] if rows else []
+
+@st.cache_data(ttl=30)
+def load_inventory_v2(player_id: int) -> pd.DataFrame:
+    """Charge l'inventaire avec la colonne conteneur."""
+    rows = query("""
+        SELECT i.id AS inv_id, i.quantite, i.localisation,
+               COALESCE(i.conteneur, 'Porté sur soi') AS conteneur,
+               e.id AS eq_id, e.nom, e.categorie, e.sous_categorie,
+               e.poids_kg, e.prix_deniers, e.notes,
+               e.degats, e.mains, e.force_requise, e.resistance,
+               e.m_distance, e.portee_max, e.magasin, e.tir_rechargement
+        FROM inventaire i
+        JOIN equipements e ON e.id = i.equipement_id
+        WHERE i.player_id = %s
+        ORDER BY i.conteneur, e.categorie, e.nom
+    """, (player_id,))
+    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+
+def invalidate_cache_v2():
+    invalidate_cache()
+    load_inventory_v2.clear()
+    load_conteneurs_joueur.clear()
+
+# ─────────────────────────────────────────────
 #  PAGE : JOUEUR
 # ─────────────────────────────────────────────
 def page_joueur():
     user = st.session_state.user
+
+    # ── CSS parchemin spécifique à la fiche joueur ──
+    st.markdown("""
+    <style>
+    .fiche-wrapper {
+        background: #f5ead0;
+        border: 2px solid #b8860b;
+        border-radius: 6px;
+        padding: 1.2rem 1.5rem 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+    }
+    .fiche-titre-perso {
+        font-family: 'Cinzel', serif;
+        font-size: 2rem;
+        color: #2c1a0e;
+        border-bottom: 2px solid #b8860b;
+        margin-bottom: 0.8rem;
+        padding-bottom: 0.3rem;
+        letter-spacing: 0.06em;
+    }
+    .fiche-sous-titre {
+        font-family: 'Cinzel', serif;
+        font-size: 0.65rem;
+        color: #5c3a1e;
+        text-transform: uppercase;
+        letter-spacing: 0.15em;
+        margin-top: -0.5rem;
+        margin-bottom: 1rem;
+    }
+    .conteneur-box {
+        background: rgba(245,234,208,0.6);
+        border: 1px solid #b8860b;
+        border-radius: 4px;
+        padding: 0.6rem 0.8rem 0.8rem;
+        margin-bottom: 0.8rem;
+        min-height: 80px;
+    }
+    .conteneur-header {
+        font-family: 'Cinzel', serif;
+        font-size: 0.75rem;
+        color: #2c1a0e;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        border-bottom: 1px solid #b8860b;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.2rem;
+        display: flex;
+        justify-content: space-between;
+    }
+    .conteneur-poids {
+        font-family: 'Crimson Text', serif;
+        font-size: 0.75rem;
+        color: #8b1a1a;
+        font-style: italic;
+    }
+    .item-ligne {
+        font-family: 'Crimson Text', serif;
+        font-size: 0.82rem;
+        color: #2c1a0e;
+        border-bottom: 1px solid #d9cdb0;
+        padding: 2px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .item-nom { flex: 1; }
+    .item-poids {
+        font-size: 0.72rem;
+        color: #5c3a1e;
+        margin-left: 8px;
+        white-space: nowrap;
+    }
+    .item-stat {
+        font-size: 0.70rem;
+        color: #8b1a1a;
+        margin-left: 6px;
+        font-style: italic;
+        white-space: nowrap;
+    }
+    .fiche-total {
+        font-family: 'Cinzel', serif;
+        font-size: 1rem;
+        color: #2c1a0e;
+        text-align: right;
+        border-top: 2px solid #b8860b;
+        padding-top: 0.4rem;
+        margin-top: 0.5rem;
+    }
+    .fiche-total span { color: #b8860b; font-size: 1.2rem; }
+    .poids-alert { color: #8b1a1a !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
     st.markdown(f"""<div class="banner"><h1>🐉 Rêve de Dragon</h1>
         <p>Carnet d'aventurier de <em>{user['username']}</em></p></div>""", unsafe_allow_html=True)
 
-    tab1, tab2 = st.tabs(["🎒 Mon inventaire", "⚔️ Catalogue"])
+    tab1, tab2, tab3 = st.tabs(["📜 Ma fiche", "⚔️ Catalogue", "🗃️ Mes conteneurs"])
 
     with tab1:
         pinfo = load_player_info(user["id"])
@@ -1178,45 +1325,38 @@ def page_joueur():
             if st.button("💾 Sauvegarder", key="j_save_params"):
                 execute("UPDATE users SET monture=%s, poids_max_joueur=%s WHERE id=%s",
                         (new_monture, new_poids_max, user["id"]))
-                invalidate_cache(); st.success("Paramètres sauvegardés !"); st.rerun()
+                invalidate_cache_v2(); st.success("Paramètres sauvegardés !"); st.rerun()
 
-        df_inv = load_inventory(user["id"])
+        # ── Conteneurs perso du joueur ──
+        conteneurs_perso = load_conteneurs_joueur(user["id"])
+        noms_perso  = [cp["nom"]   for cp in conteneurs_perso]
+        icones_perso = {cp["nom"]: cp["icone"] for cp in conteneurs_perso}
+        ids_perso    = {cp["nom"]: cp["id"]    for cp in conteneurs_perso}
+
+        # Tous les conteneurs disponibles (fixes + perso)
+        conteneurs_dispos = CONTENEURS_SOI.copy()
+        if monture_actuelle != "Aucune":
+            conteneurs_dispos += CONTENEURS_MONTURE
+        conteneurs_dispos += noms_perso
+
+        # Icones complètes (fixes + perso)
+        icones_all = {**CONTENEUR_ICONE, **icones_perso}
+
+        df_inv = load_inventory_v2(user["id"])
 
         if df_inv.empty:
             st.info("Votre besace est vide. Consultez le catalogue pour vous équiper.")
         else:
-            df_inv["poids_total"]  = df_inv["poids_kg"] * df_inv["quantite"]
-            df_soi     = df_inv[df_inv["localisation"] == "soi"]
-            df_monture = df_inv[df_inv["localisation"] == "monture"]
-            poids_soi     = df_soi["poids_total"].sum()
-            poids_monture = df_monture["poids_total"].sum()
-            poids_total   = df_inv["poids_total"].sum()
+            df_inv = df_inv.copy()
+            df_inv["poids_total"] = df_inv["poids_kg"] * df_inv["quantite"]
 
-            # ── Métriques ──
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.markdown(f"""<div class="metric-card"><div class="metric-value">{len(df_inv)}</div>
-                    <div class="metric-label">Types d'objets</div></div>""", unsafe_allow_html=True)
-            with c2:
-                couleur_poids = "#c0392b" if poids_max > 0 and poids_soi > poids_max else "#b8860b"
-                st.markdown(f"""<div class="metric-card">
-                    <div class="metric-value" style="color:{couleur_poids}">{poids_soi:.2f} kg</div>
-                    <div class="metric-label">Sur soi{f" / {poids_max:.1f} kg max" if poids_max > 0 else ""}</div>
-                    </div>""", unsafe_allow_html=True)
-            with c3:
-                monture_label = monture_actuelle if monture_actuelle != "Aucune" else "—"
-                st.markdown(f"""<div class="metric-card"><div class="metric-value">{poids_monture:.2f} kg</div>
-                    <div class="metric-label">Sur {monture_label}</div></div>""", unsafe_allow_html=True)
-            with c4:
-                st.markdown(f"""<div class="metric-card"><div class="metric-value">{poids_total:.2f} kg</div>
-                    <div class="metric-label">Poids total</div></div>""", unsafe_allow_html=True)
+            # Calculs globaux
+            mask_soi    = df_inv["conteneur"].apply(lambda x: conteneur_to_localisation(x) == "soi")
+            poids_soi   = df_inv[mask_soi]["poids_total"].sum()
+            poids_mont  = df_inv[~mask_soi]["poids_total"].sum()
+            poids_total = df_inv["poids_total"].sum()
 
-            st.markdown("")
-
-            # ══════════════════════════════════════════
-            #  BOUTON TÉLÉCHARGER LA FICHE PDF
-            # ══════════════════════════════════════════
-            st.markdown("---")
+            # ── Bouton PDF ──
             col_pdf, col_info = st.columns([1, 3])
             with col_pdf:
                 pdf_bytes = generer_fiche_pdf(
@@ -1233,67 +1373,148 @@ def page_joueur():
                     key="dl_fiche_pdf",
                 )
             with col_info:
-                st.caption(
-                    "Génère votre fiche d'équipement Rêve de Dragon au format parchemin, "
-                    "pré-remplie avec votre inventaire actuel : objets sur soi, monture, "
-                    "armes, armures et récapitulatif des poids."
+                couleur_soi = "poids-alert" if poids_max > 0 and poids_soi > poids_max else ""
+                st.markdown(
+                    f"<span class='{couleur_soi}' style='color:#2c1a0e;font-family:Crimson Text,serif;font-size:0.9rem;'>"
+                    f"Sur soi : <b>{poids_soi:.2f} kg</b>"
+                    + (f" / {poids_max:.1f} max" if poids_max > 0 else "")
+                    + (f" &nbsp;|&nbsp; {monture_actuelle} : <b>{poids_mont:.2f} kg</b>" if monture_actuelle != "Aucune" else "")
+                    + f" &nbsp;|&nbsp; Total : <b>{poids_total:.2f} kg</b></span>",
+                    unsafe_allow_html=True
                 )
-            st.markdown("---")
-            # ══════════════════════════════════════════
+            st.markdown("")
 
-            def _section_joueur(df_section, titre):
-                st.markdown(f"### {titre}")
-                if df_section.empty:
-                    st.caption("Aucun objet."); return
-                for cat in sorted(df_section["categorie"].dropna().unique()):
-                    df_cat = df_section[df_section["categorie"] == cat].copy()
-                    df_cat["poids_total"] = df_cat["poids_kg"] * df_cat["quantite"]
-                    nb_cat    = df_cat["quantite"].sum()
-                    poids_cat = df_cat["poids_total"].sum()
-                    mask_tir    = df_cat["sous_categorie"].apply(is_tir)
-                    mask_lancer = df_cat["sous_categorie"].apply(is_lancer)
-                    with st.expander(f"⚔️ {cat}  —  {int(nb_cat)} objet(s)  •  {poids_cat:.2f} kg", expanded=True):
-                        for df_sub, fn, lbl in [
-                            (df_cat[~mask_tir & ~mask_lancer], _cols_display_melee,  "**Mêlée**"),
-                            (df_cat[mask_tir],                 _cols_display_tir,    "**Tir**"),
-                            (df_cat[mask_lancer],              _cols_display_lancer, "**Lancer**"),
-                        ]:
-                            if not df_sub.empty:
-                                st.markdown(lbl)
-                                cols_, ren_ = fn(df_sub)
-                                base_inv  = ["nom","quantite","poids_kg","poids_total","sous_categorie","notes"]
-                                stat_cols = [c for c in (COLS_ARMES_COMMUNES if lbl != "**Tir**" else ["degats"] + COLS_ARMES_TIR) if c in df_sub.columns]
-                                show = [c for c in base_inv + stat_cols if c in df_sub.columns]
-                                ren_.update({"nom":"Objet","quantite":"Quantité","poids_kg":"Poids unit. (kg)",
-                                             "poids_total":"Poids total (kg)","sous_categorie":"Sous-catégorie"})
-                                st.dataframe(df_sub[show].rename(columns=ren_), use_container_width=True, hide_index=True)
+            # ════════════════════════════════════════════════
+            #  FICHE PARCHEMIN — 3 colonnes comme le PDF
+            # ════════════════════════════════════════════════
 
-            _section_joueur(df_soi, "🧍 Sur soi")
+            def _html_items(df_c: pd.DataFrame) -> str:
+                if df_c.empty:
+                    return "<div style='color:#a09070;font-style:italic;font-size:0.78rem;padding:4px 0;'>— vide —</div>"
+                html = ""
+                for _, row in df_c.iterrows():
+                    nom    = str(row.get("nom", ""))
+                    qty    = int(row.get("quantite", 1))
+                    poids  = row.get("poids_total", 0) or 0
+                    degats = str(row.get("degats", "") or "")
+                    label  = f"{nom} ×{qty}" if qty > 1 else nom
+                    stat   = degats if degats else ""
+                    poids_s = f"{poids:.2g} kg" if poids > 0 else ""
+                    html += f"""<div class="item-ligne">
+                        <span class="item-nom">{label}</span>
+                        {"<span class='item-stat'>"+stat+"</span>" if stat else ""}
+                        {"<span class='item-poids'>"+poids_s+"</span>" if poids_s else ""}
+                    </div>"""
+                return html
+
+            def _conteneur_html(nom_cont: str, df_c: pd.DataFrame, icone: str = "📦") -> str:
+                poids   = df_c["poids_total"].sum() if not df_c.empty else 0
+                poids_s = f"{poids:.2f} kg" if poids > 0 else "vide"
+                return f"""<div class="conteneur-box">
+                    <div class="conteneur-header">
+                        <span>{icone} {nom_cont}</span>
+                        <span class="conteneur-poids">{poids_s}</span>
+                    </div>
+                    {_html_items(df_c)}
+                </div>"""
+
+            # ── Colonnes fixes ──
+            col_a_items = ["Porté sur soi", "Sac à dos"]
+            col_b_items = ["Ceinturon", "Bourse", "Outre / Gourde", "Etui"]
+
+            html_a = html_b = html_c = ""
+
+            for cont in col_a_items:
+                df_c = df_inv[df_inv["conteneur"] == cont]
+                html_a += _conteneur_html(cont, df_c, icones_all.get(cont, "📦"))
+
+            for cont in col_b_items:
+                df_c = df_inv[df_inv["conteneur"] == cont]
+                html_b += _conteneur_html(cont, df_c, icones_all.get(cont, "📦"))
+
+            # ── Colonne C : Armes + Armures + Monture ──
+            df_armes   = df_inv[df_inv["sous_categorie"].apply(is_arme)]
+            df_armures = df_inv[df_inv["categorie"].str.lower().str.contains("armure", na=False)]
+            poids_armes   = df_armes["poids_total"].sum()
+            poids_armures = df_armures["poids_total"].sum()
+
+            html_c += f"""<div class="conteneur-box">
+                <div class="conteneur-header">
+                    <span>⚔️ Armes</span>
+                    <span class="conteneur-poids">+dom  rés. | {poids_armes:.2f} kg</span>
+                </div>
+                {_html_items(df_armes)}
+            </div>"""
+
+            html_c += f"""<div class="conteneur-box">
+                <div class="conteneur-header">
+                    <span>🛡️ Armures</span>
+                    <span class="conteneur-poids">prot. déter. | {poids_armures:.2f} kg</span>
+                </div>
+                {_html_items(df_armures)}
+            </div>"""
+
             if monture_actuelle != "Aucune":
-                _section_joueur(df_monture, f"🐴 Sur la {monture_actuelle}")
+                df_c = df_inv[df_inv["conteneur"] == "Monture"]
+                html_c += _conteneur_html("Monture", df_c, "🐴")
 
+            # ── Conteneurs personnalisés : répartis en bas des 3 colonnes ──
+            for idx, nom_cp in enumerate(noms_perso):
+                df_c   = df_inv[df_inv["conteneur"] == nom_cp]
+                icone  = icones_perso.get(nom_cp, "🗃️")
+                bloc   = _conteneur_html(nom_cp, df_c, icone)
+                if idx % 3 == 0:   html_a += bloc
+                elif idx % 3 == 1: html_b += bloc
+                else:              html_c += bloc
+
+            # Poids total
+            alert_cls = "poids-alert" if poids_max > 0 and poids_soi > poids_max else ""
+            total_html = f"""<div class="fiche-total {alert_cls}">
+                Enc. total &nbsp; <span>{poids_total:.2f} kg</span>
+            </div>"""
+
+            st.markdown(f"""
+            <div class="fiche-wrapper">
+                <div class="fiche-titre-perso">{user['username']}</div>
+                <div class="fiche-sous-titre">Fiche d'équipement — Rêve de Dragon</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;">
+                    <div>{html_a}</div>
+                    <div>{html_b}</div>
+                    <div>{html_c}</div>
+                </div>
+                {total_html}
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ════════════════════════════════════════════════
+        #  GESTION : Déplacer conteneur / Retirer
+        # ════════════════════════════════════════════════
+        if not df_inv.empty:
             st.markdown("---")
             c1, c2 = st.columns(2)
             with c1:
-                st.markdown("##### 🔀 Déplacer un objet")
-                obj_deplacer = st.selectbox("Objet à déplacer", df_inv["nom"].tolist(), key="j_move")
-                loc_actuelle = df_inv[df_inv["nom"] == obj_deplacer]["localisation"].values[0]
-                nouvelle_loc = "monture" if loc_actuelle == "soi" else "soi"
-                dest_label   = f"➡️ Mettre sur la {monture_actuelle}" if nouvelle_loc == "monture" else "➡️ Mettre sur soi"
-                if monture_actuelle != "Aucune" or nouvelle_loc == "soi":
-                    if st.button(dest_label, key="j_move_btn"):
-                        inv_id = int(df_inv[df_inv["nom"] == obj_deplacer]["inv_id"].values[0])
-                        execute("UPDATE inventaire SET localisation=%s WHERE id=%s", (nouvelle_loc, inv_id))
-                        invalidate_cache(); st.rerun()
-                else:
-                    st.caption("Définissez d'abord une monture dans les paramètres.")
+                st.markdown("##### 🔀 Changer de conteneur")
+                obj_move    = st.selectbox("Objet", df_inv["nom"].tolist(), key="j_move")
+                row_move    = df_inv[df_inv["nom"] == obj_move].iloc[0]
+                cont_actuel = row_move["conteneur"]
+                autres_cont = [c for c in conteneurs_dispos if c != cont_actuel]
+                nouveau_cont = st.selectbox(
+                    f"Actuellement : {icones_all.get(cont_actuel,'')} {cont_actuel}  →  Vers",
+                    autres_cont, key="j_move_dest"
+                )
+                if st.button("➡️ Déplacer", key="j_move_btn"):
+                    inv_id  = int(row_move["inv_id"])
+                    new_loc = conteneur_to_localisation(nouveau_cont)
+                    execute("UPDATE inventaire SET conteneur=%s, localisation=%s WHERE id=%s",
+                            (nouveau_cont, new_loc, inv_id))
+                    invalidate_cache_v2(); st.rerun()
             with c2:
                 st.markdown("##### 🗑️ Retirer un objet")
                 to_remove = st.selectbox("Objet à retirer", df_inv["nom"].tolist(), key="j_remove")
                 if st.button("🗑️ Retirer de mon inventaire", key="j_remove_btn"):
                     inv_id = int(df_inv[df_inv["nom"] == to_remove]["inv_id"].values[0])
                     execute("DELETE FROM inventaire WHERE id=%s", (inv_id,))
-                    invalidate_cache(); st.success(f"« {to_remove} » retiré."); st.rerun()
+                    invalidate_cache_v2(); st.success(f"« {to_remove} » retiré."); st.rerun()
 
     with tab2:
         df = load_equipements()
@@ -1301,24 +1522,103 @@ def page_joueur():
         st.markdown("---")
         st.markdown("##### Ajouter un objet à mon inventaire")
         if not df.empty:
-            c1, c2, c3 = st.columns(3)
+            # Recharger les conteneurs perso pour cet onglet
+            conts_perso2 = [cp["nom"] for cp in load_conteneurs_joueur(user["id"])]
+            pinfo2       = load_player_info(user["id"])
+            monture2     = pinfo2.get("monture") or "Aucune"
+            conts_dispos2 = CONTENEURS_SOI + (CONTENEURS_MONTURE if monture2 != "Aucune" else []) + conts_perso2
+
+            c1, c2, c3, c4 = st.columns(4)
             with c1:
                 eq_list   = sorted(df["nom"].tolist())
                 chosen_eq = st.selectbox("Choisir l'objet", eq_list, key="jadd_eq")
             with c2:
                 qty = st.number_input("Quantité", min_value=1, max_value=99, value=1, key="jadd_qty")
             with c3:
-                pinfo2   = load_player_info(user["id"])
-                monture2 = pinfo2.get("monture") or "Aucune"
-                loc_options = ["soi"] + (["monture"] if monture2 != "Aucune" else [])
-                loc_labels  = ["🧍 Sur soi"] + ([f"🐴 Sur la {monture2}"] if monture2 != "Aucune" else [])
-                loc_choice  = st.selectbox("Ranger où ?", loc_labels, key="jadd_loc")
-                loc_val     = loc_options[loc_labels.index(loc_choice)]
-            if st.button("➕ Ajouter à mon inventaire"):
-                eq_id = int(df[df["nom"] == chosen_eq]["id"].values[0])
-                execute("INSERT INTO inventaire (player_id, equipement_id, quantite, localisation) VALUES (%s,%s,%s,%s)",
-                        (user["id"], eq_id, qty, loc_val))
-                invalidate_cache(); st.success(f"« {chosen_eq} » (x{qty}) ajouté — {loc_choice} !"); st.rerun()
+                chosen_cont = st.selectbox("Ranger dans", conts_dispos2, key="jadd_cont")
+            with c4:
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+                if st.button("➕ Ajouter à mon inventaire", key="jadd_btn"):
+                    eq_id = int(df[df["nom"] == chosen_eq]["id"].values[0])
+                    loc_v = conteneur_to_localisation(chosen_cont)
+                    execute(
+                        "INSERT INTO inventaire (player_id, equipement_id, quantite, localisation, conteneur) VALUES (%s,%s,%s,%s,%s)",
+                        (user["id"], eq_id, qty, loc_v, chosen_cont)
+                    )
+                    invalidate_cache_v2()
+                    icone_ch = icones_all.get(chosen_cont, "🗃️")
+                    st.success(f"« {chosen_eq} » (×{qty}) → {icone_ch} {chosen_cont} !")
+                    st.rerun()
+
+    # ════════════════════════════════════════════════
+    #  TAB 3 : Gestion des conteneurs personnalisés
+    # ════════════════════════════════════════════════
+    with tab3:
+        st.markdown("#### 🗃️ Mes conteneurs personnalisés")
+        st.caption("Créez vos propres sections de rangement : sacoche de selle, boîte à alchimie, étui à cartes…")
+
+        conteneurs_perso3 = load_conteneurs_joueur(user["id"])
+
+        # ── Créer un nouveau conteneur ──
+        with st.form("form_nouveau_conteneur", clear_on_submit=True):
+            st.markdown("##### ➕ Nouveau conteneur")
+            c1, c2, c3 = st.columns([3, 1, 1])
+            with c1:
+                nouveau_nom = st.text_input("Nom du conteneur", placeholder="ex: Besace de selle, Coffret à herbes…")
+            with c2:
+                icone_choisie = st.selectbox("Icône", ICONES_DISPO)
+            with c3:
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+                submitted = st.form_submit_button("✅ Créer")
+            if submitted:
+                if nouveau_nom.strip():
+                    try:
+                        execute(
+                            "INSERT INTO conteneurs_joueur (player_id, nom, icone) VALUES (%s, %s, %s)",
+                            (user["id"], nouveau_nom.strip(), icone_choisie)
+                        )
+                        invalidate_cache_v2()
+                        st.success(f"{icone_choisie} « {nouveau_nom} » créé !")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erreur : {e}")
+                else:
+                    st.warning("Le nom est obligatoire.")
+
+        st.markdown("---")
+
+        # ── Liste des conteneurs existants ──
+        if not conteneurs_perso3:
+            st.info("Vous n'avez pas encore de conteneur personnalisé.")
+        else:
+            st.markdown("##### Conteneurs existants")
+            df_inv3 = load_inventory_v2(user["id"])
+            for cp in conteneurs_perso3:
+                nb_items = 0
+                if not df_inv3.empty:
+                    nb_items = len(df_inv3[df_inv3["conteneur"] == cp["nom"]])
+                c1, c2, c3 = st.columns([1, 4, 1])
+                with c1:
+                    st.markdown(f"<span style='font-size:1.8rem'>{cp['icone']}</span>", unsafe_allow_html=True)
+                with c2:
+                    st.markdown(
+                        f"**{cp['nom']}**  "
+                        f"<span style='color:#5c3a1e;font-size:0.8rem;'>({nb_items} objet(s))</span>",
+                        unsafe_allow_html=True
+                    )
+                with c3:
+                    if st.button("🗑️ Supprimer", key=f"del_cont_{cp['id']}"):
+                        if nb_items > 0:
+                            # Remettre les objets dans "Porté sur soi"
+                            execute(
+                                "UPDATE inventaire SET conteneur='Porté sur soi', localisation='soi' WHERE player_id=%s AND conteneur=%s",
+                                (user["id"], cp["nom"])
+                            )
+                        execute("DELETE FROM conteneurs_joueur WHERE id=%s AND player_id=%s",
+                                (cp["id"], user["id"]))
+                        invalidate_cache_v2()
+                        st.success(f"Conteneur « {cp['nom']} » supprimé. Les objets ont été remis dans « Porté sur soi ».")
+                        st.rerun()
 
 # ─────────────────────────────────────────────
 #  SIDEBAR
