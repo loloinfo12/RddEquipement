@@ -1391,32 +1391,35 @@ def page_joueur():
             def _html_items(df_c: pd.DataFrame) -> str:
                 if df_c.empty:
                     return "<div style='color:#a09070;font-style:italic;font-size:0.78rem;padding:4px 0;'>— vide —</div>"
-                html = ""
+                parts = []
                 for _, row in df_c.iterrows():
-                    nom    = str(row.get("nom", ""))
-                    qty    = int(row.get("quantite", 1))
-                    poids  = row.get("poids_total", 0) or 0
-                    degats = str(row.get("degats", "") or "")
-                    label  = f"{nom} ×{qty}" if qty > 1 else nom
-                    stat   = degats if degats else ""
-                    poids_s = f"{poids:.2g} kg" if poids > 0 else ""
-                    html += f"""<div class="item-ligne">
-                        <span class="item-nom">{label}</span>
-                        {"<span class='item-stat'>"+stat+"</span>" if stat else ""}
-                        {"<span class='item-poids'>"+poids_s+"</span>" if poids_s else ""}
-                    </div>"""
-                return html
+                    nom     = str(row.get("nom", ""))
+                    qty     = int(row.get("quantite", 1))
+                    poids   = row.get("poids_total", 0) or 0
+                    degats  = str(row.get("degats", "") or "")
+                    label   = (nom + " ×" + str(qty)) if qty > 1 else nom
+                    stat_html  = ("<span class='item-stat'>" + degats + "</span>") if degats else ""
+                    poids_html = ("<span class='item-poids'>" + ("%.2g" % poids) + " kg</span>") if poids > 0 else ""
+                    parts.append(
+                        "<div class='item-ligne'>"
+                        "<span class='item-nom'>" + label + "</span>"
+                        + stat_html + poids_html +
+                        "</div>"
+                    )
+                return "".join(parts)
 
             def _conteneur_html(nom_cont: str, df_c: pd.DataFrame, icone: str = "📦") -> str:
                 poids   = df_c["poids_total"].sum() if not df_c.empty else 0
-                poids_s = f"{poids:.2f} kg" if poids > 0 else "vide"
-                return f"""<div class="conteneur-box">
-                    <div class="conteneur-header">
-                        <span>{icone} {nom_cont}</span>
-                        <span class="conteneur-poids">{poids_s}</span>
-                    </div>
-                    {_html_items(df_c)}
-                </div>"""
+                poids_s = ("%.2f" % poids) + " kg" if poids > 0 else "vide"
+                return (
+                    "<div class='conteneur-box'>"
+                    "<div class='conteneur-header'>"
+                    "<span>" + icone + " " + nom_cont + "</span>"
+                    "<span class='conteneur-poids'>" + poids_s + "</span>"
+                    "</div>"
+                    + _html_items(df_c) +
+                    "</div>"
+                )
 
             # ── Colonnes fixes ──
             col_a_items = ["Porté sur soi", "Sac à dos"]
@@ -1438,21 +1441,25 @@ def page_joueur():
             poids_armes   = df_armes["poids_total"].sum()
             poids_armures = df_armures["poids_total"].sum()
 
-            html_c += f"""<div class="conteneur-box">
-                <div class="conteneur-header">
-                    <span>⚔️ Armes</span>
-                    <span class="conteneur-poids">+dom  rés. | {poids_armes:.2f} kg</span>
-                </div>
-                {_html_items(df_armes)}
-            </div>"""
+            html_c += (
+                "<div class='conteneur-box'>"
+                "<div class='conteneur-header'>"
+                "<span>⚔️ Armes</span>"
+                "<span class='conteneur-poids'>+dom  rés. | " + ("%.2f" % poids_armes) + " kg</span>"
+                "</div>"
+                + _html_items(df_armes) +
+                "</div>"
+            )
 
-            html_c += f"""<div class="conteneur-box">
-                <div class="conteneur-header">
-                    <span>🛡️ Armures</span>
-                    <span class="conteneur-poids">prot. déter. | {poids_armures:.2f} kg</span>
-                </div>
-                {_html_items(df_armures)}
-            </div>"""
+            html_c += (
+                "<div class='conteneur-box'>"
+                "<div class='conteneur-header'>"
+                "<span>🛡️ Armures</span>"
+                "<span class='conteneur-poids'>prot. déter. | " + ("%.2f" % poids_armures) + " kg</span>"
+                "</div>"
+                + _html_items(df_armures) +
+                "</div>"
+            )
 
             if monture_actuelle != "Aucune":
                 df_c = df_inv[df_inv["conteneur"] == "Monture"]
@@ -1460,31 +1467,35 @@ def page_joueur():
 
             # ── Conteneurs personnalisés : répartis en bas des 3 colonnes ──
             for idx, nom_cp in enumerate(noms_perso):
-                df_c   = df_inv[df_inv["conteneur"] == nom_cp]
-                icone  = icones_perso.get(nom_cp, "🗃️")
-                bloc   = _conteneur_html(nom_cp, df_c, icone)
+                df_c  = df_inv[df_inv["conteneur"] == nom_cp]
+                icone = icones_perso.get(nom_cp, "🗃️")
+                bloc  = _conteneur_html(nom_cp, df_c, icone)
                 if idx % 3 == 0:   html_a += bloc
                 elif idx % 3 == 1: html_b += bloc
                 else:              html_c += bloc
 
             # Poids total
             alert_cls = "poids-alert" if poids_max > 0 and poids_soi > poids_max else ""
-            total_html = f"""<div class="fiche-total {alert_cls}">
-                Enc. total &nbsp; <span>{poids_total:.2f} kg</span>
-            </div>"""
+            total_html = (
+                "<div class='fiche-total " + alert_cls + "'>"
+                "Enc. total &nbsp; <span>" + ("%.2f" % poids_total) + " kg</span>"
+                "</div>"
+            )
 
-            st.markdown(f"""
-            <div class="fiche-wrapper">
-                <div class="fiche-titre-perso">{user['username']}</div>
-                <div class="fiche-sous-titre">Fiche d'équipement — Rêve de Dragon</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;">
-                    <div>{html_a}</div>
-                    <div>{html_b}</div>
-                    <div>{html_c}</div>
-                </div>
-                {total_html}
-            </div>
-            """, unsafe_allow_html=True)
+            nom_perso_html = user["username"]
+            fiche_html = (
+                "<div class='fiche-wrapper'>"
+                "<div class='fiche-titre-perso'>" + nom_perso_html + "</div>"
+                "<div class='fiche-sous-titre'>Fiche d&rsquo;équipement — Rêve de Dragon</div>"
+                "<div style='display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;'>"
+                "<div>" + html_a + "</div>"
+                "<div>" + html_b + "</div>"
+                "<div>" + html_c + "</div>"
+                "</div>"
+                + total_html +
+                "</div>"
+            )
+            st.markdown(fiche_html, unsafe_allow_html=True)
 
         # ════════════════════════════════════════════════
         #  GESTION : Déplacer conteneur / Retirer
