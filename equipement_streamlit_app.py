@@ -305,6 +305,23 @@ def invalidate_cache():
 MONTURES = ["Aucune", "Cheval", "Mule / Âne", "Charrette", "Aligate", "Autre"]
 
 # ─────────────────────────────────────────────
+#  ENCOMBREMENT  (1 enc = 2 kg)
+# ─────────────────────────────────────────────
+ENC_PAR_KG = 0.5  # facteur : kg → enc
+
+def enc(kg) -> str:
+    """Convertit des kg en points d'encombrement affichables."""
+    val = (kg or 0) * ENC_PAR_KG
+    if val == 0:
+        return "0"
+    # Affiche sans décimale si entier, sinon 1 décimale
+    return str(int(val)) if val == int(val) else f"{val:.1f}"
+
+def enc_val(kg) -> float:
+    """Retourne la valeur numérique en enc."""
+    return (kg or 0) * ENC_PAR_KG
+
+# ─────────────────────────────────────────────
 #  GÉNÉRATION PDF FICHE ÉQUIPEMENT
 # ─────────────────────────────────────────────
 def generer_fiche_pdf(nom_perso: str, df_inv: pd.DataFrame, monture: str, poids_max: float) -> bytes:
@@ -363,7 +380,7 @@ def generer_fiche_pdf(nom_perso: str, df_inv: pd.DataFrame, monture: str, poids_
     if poids_max > 0:
         c.setFont("Times-Italic", 7.5)
         c.setFillColor(ENCRE_L)
-        c.drawString(140*mm, H - 30*mm, f"Poids max sur soi : {poids_max:.1f} kg")
+        c.drawString(140*mm, H - 30*mm, f"Enc. max sur soi : {enc_val(poids_max):.1f} enc.")
 
     c.setStrokeColor(ENCRE)
     c.setLineWidth(1.2)
@@ -428,7 +445,7 @@ def generer_fiche_pdf(nom_perso: str, df_inv: pd.DataFrame, monture: str, poids_
             qty    = int(row.get("quantite", 1))
             poids  = row.get("poids_total", 0) or 0
             label  = f"{nom_it} x{qty}" if qty > 1 else nom_it
-            poids_s = f"{poids:.2g}" if (show_poids and poids > 0) else ""
+            poids_s = enc(poids) if (show_poids and poids > 0) else ""
             lines.append((label, poids_s))
         while len(lines) < max_n:
             lines.append(("", ""))
@@ -443,7 +460,7 @@ def generer_fiche_pdf(nom_perso: str, df_inv: pd.DataFrame, monture: str, poids_
             res    = str(row.get("resistance", "") or "")
             poids  = row.get("poids_total", 0) or 0
             label  = f"{nom_it} x{qty}" if qty > 1 else nom_it
-            stat   = "  ".join(filter(None, [degats, res, f"{poids:.2g}kg" if poids else ""]))
+            stat   = "  ".join(filter(None, [degats, res, enc(poids) + " enc." if poids else ""]))
             lines.append((label, stat))
         while len(lines) < max_n:
             lines.append(("", ""))
@@ -474,7 +491,7 @@ def generer_fiche_pdf(nom_perso: str, df_inv: pd.DataFrame, monture: str, poids_
         y_a = ligne_item(col_a, y_a, txt, po)
     y_a -= 3*mm
 
-    y_a = section_titre(col_a, y_a, "Sac à dos / Divers", "Enc.  kg")
+    y_a = section_titre(col_a, y_a, "Sac à dos / Divers", "Enc.")
     lines_sac = rows_to_lines(df_soi, 14)
     for txt, po in lines_sac:
         y_a = ligne_item(col_a, y_a, txt, po)
@@ -484,11 +501,11 @@ def generer_fiche_pdf(nom_perso: str, df_inv: pd.DataFrame, monture: str, poids_
     c.drawString(col_a, y_a, "Enc. sur soi :")
     c.setFont("Times-Bold", 9)
     c.setFillColor(ROUGE if poids_max > 0 and poids_soi_total > poids_max else OR)
-    c.drawRightString(col_a + col_w, y_a, f"{poids_soi_total:.2f} kg")
+    c.drawRightString(col_a + col_w, y_a, f"{enc_val(poids_soi_total):.1f} enc.")
 
     # ══ COLONNE B : Sur la monture ══
     y_b = top
-    y_b = section_titre(col_b, y_b, f"Sur la {monture_label}", "Enc.  kg")
+    y_b = section_titre(col_b, y_b, f"Sur la {monture_label}", "Enc.")
     lines_mont = rows_to_lines(df_monture, 20) if not df_monture.empty else [("", "")] * 20
     for txt, po in lines_mont:
         y_b = ligne_item(col_b, y_b, txt, po)
@@ -498,7 +515,7 @@ def generer_fiche_pdf(nom_perso: str, df_inv: pd.DataFrame, monture: str, poids_
     c.drawString(col_b, y_b, f"Enc. {monture_label} :")
     c.setFont("Times-Bold", 9)
     c.setFillColor(OR)
-    c.drawRightString(col_b + col_w, y_b, f"{poids_mont_total:.2f} kg")
+    c.drawRightString(col_b + col_w, y_b, f"{enc_val(poids_mont_total):.1f} enc.")
 
     # ══ COLONNE C : Armes / Armures / Récap ══
     y_c = top
@@ -517,9 +534,9 @@ def generer_fiche_pdf(nom_perso: str, df_inv: pd.DataFrame, monture: str, poids_
 
     y_c = section_titre(col_c, y_c, "Récapitulatif poids", "")
     recap = [
-        (f"Sur soi : {poids_soi_total:.2f} kg", f"/ {poids_max:.1f} max" if poids_max > 0 else ""),
-        (f"Sur {monture_label} : {poids_mont_total:.2f} kg", ""),
-        (f"Total : {poids_total:.2f} kg", ""),
+        (f"Sur soi : {enc_val(poids_soi_total):.1f} enc.", f"/ {enc_val(poids_max):.1f} max" if poids_max > 0 else ""),
+        (f"Sur {monture_label} : {enc_val(poids_mont_total):.1f} enc.", ""),
+        (f"Total : {enc_val(poids_total):.1f} enc.", ""),
     ]
     for txt, po in recap:
         y_c = ligne_item(col_c, y_c, txt, po)
@@ -544,7 +561,7 @@ def generer_fiche_pdf(nom_perso: str, df_inv: pd.DataFrame, monture: str, poids_
     c.drawString(col_c, 13*mm, "Enc. total")
     c.setFont("Times-Bold", 13)
     c.setFillColor(OR)
-    c.drawRightString(W - 12*mm, 13*mm, f"{poids_total:.2f} kg")
+    c.drawRightString(W - 12*mm, 13*mm, f"{enc_val(poids_total):.1f} enc.")
 
     c.save()
     buf.seek(0)
@@ -701,7 +718,7 @@ def _cols_display_melee(df):
     stats = [c for c in COLS_ARMES_COMMUNES if c in df.columns]
     cols  = [c for c in base + stats + ["notes"] if c in df.columns]
     rename = {"categorie":"Catégorie","sous_categorie":"Sous-catégorie","nom":"Nom",
-              "poids_kg":"Poids (kg)","prix_deniers":"Prix (deniers)","notes":"Notes",**LABELS_COMMUNES}
+              "poids_kg":"Enc.","prix_deniers":"Prix (deniers)","notes":"Notes",**LABELS_COMMUNES}
     return cols, rename
 
 def _cols_display_tir(df):
@@ -709,7 +726,7 @@ def _cols_display_tir(df):
     stats = [c for c in COLS_ARMES_COMMUNES[:1] + COLS_ARMES_TIR if c in df.columns]
     cols  = [c for c in base + stats + ["notes"] if c in df.columns]
     rename = {"categorie":"Catégorie","sous_categorie":"Sous-catégorie","nom":"Nom",
-              "poids_kg":"Poids (kg)","prix_deniers":"Prix (deniers)","notes":"Notes",**LABELS_COMMUNES,**LABELS_TIR}
+              "poids_kg":"Enc.","prix_deniers":"Prix (deniers)","notes":"Notes",**LABELS_COMMUNES,**LABELS_TIR}
     return cols, rename
 
 def _cols_display_lancer(df):
@@ -717,7 +734,7 @@ def _cols_display_lancer(df):
     stats = [c for c in COLS_ARMES_COMMUNES + COLS_ARMES_LANCER if c in df.columns]
     cols  = [c for c in base + stats + ["notes"] if c in df.columns]
     rename = {"categorie":"Catégorie","sous_categorie":"Sous-catégorie","nom":"Nom",
-              "poids_kg":"Poids (kg)","prix_deniers":"Prix (deniers)","notes":"Notes",**LABELS_COMMUNES,**LABELS_LANCER}
+              "poids_kg":"Enc.","prix_deniers":"Prix (deniers)","notes":"Notes",**LABELS_COMMUNES,**LABELS_LANCER}
     return cols, rename
 
 def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat", is_admin: bool = False):
@@ -786,7 +803,7 @@ def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat", is_admin: bool
             cols_base = ["categorie","sous_categorie","nom","poids_kg","prix_deniers","notes"]
             cols_show = [c for c in cols_base if c in df_autres.columns]
             rename_base = {"categorie":"Catégorie","sous_categorie":"Sous-catégorie","nom":"Nom",
-                           "poids_kg":"Poids (kg)","prix_deniers":"Prix (deniers)","notes":"Notes"}
+                           "poids_kg":"Enc.","prix_deniers":"Prix (deniers)","notes":"Notes"}
             st.dataframe(df_autres[cols_show].rename(columns=rename_base), use_container_width=True, hide_index=True)
             st.markdown("#### 🖼️ Illustrations")
             rows_list = [df_autres.iloc[i] for i in range(len(df_autres))]
@@ -1018,11 +1035,11 @@ def page_admin():
                     monture_idx = MONTURES.index(monture_j) if monture_j in MONTURES else 0
                     new_monture_j = st.selectbox("Type de monture", MONTURES, index=monture_idx, key="admin_monture")
                 with c2:
-                    new_poids_max_j = st.number_input("Poids max sur soi (kg)", min_value=0.0,
-                                                       value=poids_max_j, step=0.5, format="%.1f", key="admin_poids_max")
+                    new_poids_max_j = st.number_input("Enc. max sur soi", min_value=0.0,
+                                                       value=poids_max_j * 0.5, step=0.5, format="%.1f", key="admin_poids_max")
                 if st.button("💾 Sauvegarder les paramètres", key="admin_save_params"):
                     execute("UPDATE users SET monture=%s, poids_max_joueur=%s WHERE id=%s",
-                            (new_monture_j, new_poids_max_j, player_id))
+                            (new_monture_j, new_poids_max_j * 2, player_id))
                     invalidate_cache(); st.success(f"Paramètres de {selected_player} mis à jour."); st.rerun()
 
             df_inv = load_inventory(player_id)
@@ -1040,12 +1057,14 @@ def page_admin():
                         <div class="metric-label">Objets différents</div></div>""", unsafe_allow_html=True)
                 with c2:
                     couleur = "#c0392b" if poids_max_j > 0 and poids_soi > poids_max_j else "#b8860b"
+                    enc_soi_lbl = enc(poids_soi)
+                    enc_max_lbl = enc(poids_max_j)
                     st.markdown(f"""<div class="metric-card">
-                        <div class="metric-value" style="color:{couleur}">{poids_soi:.2f} kg</div>
-                        <div class="metric-label">Sur soi{f" / {poids_max_j:.1f} max" if poids_max_j > 0 else ""}</div>
+                        <div class="metric-value" style="color:{couleur}">{enc_soi_lbl} enc.</div>
+                        <div class="metric-label">Sur soi{f" / {enc_max_lbl} max" if poids_max_j > 0 else ""}</div>
                         </div>""", unsafe_allow_html=True)
                 with c3:
-                    st.markdown(f"""<div class="metric-card"><div class="metric-value">{poids_mont:.2f} kg</div>
+                    st.markdown(f"""<div class="metric-card"><div class="metric-value">{enc(poids_mont)} enc.</div>
                         <div class="metric-label">Sur {monture_j if monture_j != "Aucune" else "monture"}</div>
                         </div>""", unsafe_allow_html=True)
                 st.markdown("")
@@ -1056,7 +1075,7 @@ def page_admin():
                         df_c["poids_total"] = df_c["poids_kg"] * df_c["quantite"]
                         mask_tir    = df_c["sous_categorie"].apply(is_tir)
                         mask_lancer = df_c["sous_categorie"].apply(is_lancer)
-                        with st.expander(f"{label_icon} {cat}  •  {df_c['poids_total'].sum():.2f} kg", expanded=False):
+                        with st.expander(f"{label_icon} {cat}  •  {enc(df_c['poids_total'].sum())} enc.", expanded=False):
                             for df_sub, fn, lbl in [
                                 (df_c[~mask_tir & ~mask_lancer], _cols_display_melee, "*Mêlée*"),
                                 (df_c[mask_tir],                 _cols_display_tir,   "*Tir*"),
@@ -1067,7 +1086,7 @@ def page_admin():
                                     cols_, ren_ = fn(df_sub)
                                     extra = ["quantite","poids_total","localisation"]
                                     show  = [c for c in extra + cols_ if c in df_sub.columns]
-                                    ren_.update({"quantite":"Qté","poids_total":"Poids total","localisation":"Lieu"})
+                                    ren_.update({"quantite":"Qté","poids_total":"Enc.","localisation":"Lieu"})
                                     st.dataframe(df_sub[show].rename(columns=ren_), use_container_width=True, hide_index=True)
 
                 st.markdown("**🧍 Sur soi**")
@@ -1328,11 +1347,11 @@ def page_joueur():
                 monture_idx = MONTURES.index(monture_actuelle) if monture_actuelle in MONTURES else 0
                 new_monture = st.selectbox("Type de monture", MONTURES, index=monture_idx, key="j_monture")
             with c2:
-                new_poids_max = st.number_input("Poids max sur soi (kg)", min_value=0.0,
-                                                 value=poids_max, step=0.5, format="%.1f", key="j_poids_max")
+                new_poids_max = st.number_input("Enc. max sur soi", min_value=0.0,
+                                                 value=poids_max * 0.5, step=0.5, format="%.1f", key="j_poids_max")
             if st.button("💾 Sauvegarder", key="j_save_params"):
                 execute("UPDATE users SET monture=%s, poids_max_joueur=%s WHERE id=%s",
-                        (new_monture, new_poids_max, user["id"]))
+                        (new_monture, new_poids_max * 2, user["id"]))
                 invalidate_cache_v2(); st.success("Paramètres sauvegardés !"); st.rerun()
 
         # ── Conteneurs perso du joueur ──
@@ -1384,10 +1403,10 @@ def page_joueur():
                 couleur_soi = "poids-alert" if poids_max > 0 and poids_soi > poids_max else ""
                 st.markdown(
                     f"<span class='{couleur_soi}' style='color:#2c1a0e;font-family:Crimson Text,serif;font-size:0.9rem;'>"
-                    f"Sur soi : <b>{poids_soi:.2f} kg</b>"
-                    + (f" / {poids_max:.1f} max" if poids_max > 0 else "")
-                    + (f" &nbsp;|&nbsp; {monture_actuelle} : <b>{poids_mont:.2f} kg</b>" if monture_actuelle != "Aucune" else "")
-                    + f" &nbsp;|&nbsp; Total : <b>{poids_total:.2f} kg</b></span>",
+                    f"Sur soi : <b>{enc(poids_soi)} enc.</b>"
+                    + (f" / {enc(poids_max)} max" if poids_max > 0 else "")
+                    + (f" &nbsp;|&nbsp; {monture_actuelle} : <b>{enc(poids_mont)} enc.</b>" if monture_actuelle != "Aucune" else "")
+                    + f" &nbsp;|&nbsp; Total : <b>{enc(poids_total)} enc.</b></span>",
                     unsafe_allow_html=True
                 )
             st.markdown("")
@@ -1407,7 +1426,7 @@ def page_joueur():
                     degats  = str(row.get("degats", "") or "")
                     label   = (nom + " ×" + str(qty)) if qty > 1 else nom
                     stat_html  = ("<span class='item-stat'>" + degats + "</span>") if degats else ""
-                    poids_html = ("<span class='item-poids'>" + ("%.2g" % poids) + " kg</span>") if poids > 0 else ""
+                    poids_html = ("<span class='item-poids'>" + enc(poids) + " enc.</span>") if poids > 0 else ""
                     parts.append(
                         "<div class='item-ligne'>"
                         "<span class='item-nom'>" + label + "</span>"
@@ -1418,7 +1437,7 @@ def page_joueur():
 
             def _conteneur_html(nom_cont: str, df_c: pd.DataFrame, icone: str = "📦") -> str:
                 poids   = df_c["poids_total"].sum() if not df_c.empty else 0
-                poids_s = ("%.2f" % poids) + " kg" if poids > 0 else "vide"
+                poids_s = enc(poids) + " enc." if poids > 0 else "vide"
                 return (
                     "<div class='conteneur-box'>"
                     "<div class='conteneur-header'>"
@@ -1453,7 +1472,7 @@ def page_joueur():
                 "<div class='conteneur-box'>"
                 "<div class='conteneur-header'>"
                 "<span>⚔️ Armes</span>"
-                "<span class='conteneur-poids'>+dom  rés. | " + ("%.2f" % poids_armes) + " kg</span>"
+                "<span class='conteneur-poids'>+dom  rés. | " + enc(poids_armes) + " enc.</span>"
                 "</div>"
                 + _html_items(df_armes) +
                 "</div>"
@@ -1463,7 +1482,7 @@ def page_joueur():
                 "<div class='conteneur-box'>"
                 "<div class='conteneur-header'>"
                 "<span>🛡️ Armures</span>"
-                "<span class='conteneur-poids'>prot. déter. | " + ("%.2f" % poids_armures) + " kg</span>"
+                "<span class='conteneur-poids'>prot. déter. | " + enc(poids_armures) + " enc.</span>"
                 "</div>"
                 + _html_items(df_armures) +
                 "</div>"
@@ -1486,7 +1505,7 @@ def page_joueur():
             alert_cls = "poids-alert" if poids_max > 0 and poids_soi > poids_max else ""
             total_html = (
                 "<div class='fiche-total " + alert_cls + "'>"
-                "Enc. total &nbsp; <span>" + ("%.2f" % poids_total) + " kg</span>"
+                "Enc. total &nbsp; <span>" + enc(poids_total) + "</span>"
                 "</div>"
             )
 
