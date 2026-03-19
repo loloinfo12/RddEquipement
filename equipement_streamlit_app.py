@@ -868,6 +868,27 @@ def page_admin():
                 sous_idx = all_sous.index(sous_cat_edit) if sous_cat_edit in all_sous else 0
                 edit_sous_cat = st.selectbox("Sous-catégorie", all_sous, index=sous_idx)
                 edit_notes = st.text_input("Notes", value=str(row_edit.get("notes") or ""))
+
+                # Ligne encombrement + prix
+                ce1, ce2, ce3 = st.columns(3)
+                with ce1:
+                    poids_actuel_enc = float(row_edit.get("poids_kg") or 0) * ENC_PAR_KG
+                    edit_enc = st.number_input(
+                        "Encombrement (enc.)",
+                        min_value=0.0, step=0.5, format="%.1f",
+                        value=poids_actuel_enc,
+                        help="1 enc. = 2 kg. Saisissez directement en points d'encombrement."
+                    )
+                with ce2:
+                    edit_prix = st.number_input(
+                        "Prix (deniers)",
+                        min_value=0, step=10,
+                        value=int(row_edit.get("prix_deniers") or 0)
+                    )
+                with ce3:
+                    st.markdown("&nbsp;", unsafe_allow_html=True)
+                    st.caption(f"Actuellement : **{poids_actuel_enc:.1f} enc.** ({float(row_edit.get('poids_kg') or 0):.2f} kg)")
+
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
                     edit_degats = st.text_input("Dégâts", value=str(row_edit.get("degats") or ""))
@@ -888,22 +909,29 @@ def page_admin():
                     else:
                         edit_magasin = edit_tir_rech = ""
                 if st.form_submit_button("💾 Sauvegarder les stats"):
+                    edit_poids_kg = edit_enc / ENC_PAR_KG  # reconversion enc → kg pour la BDD
                     if tir_mode:
-                        execute("""UPDATE equipements SET sous_categorie=%s, notes=%s, degats=%s, mains=%s,
-                                   force_requise=%s, resistance=%s, m_distance=%s, portee_max=%s,
-                                   magasin=%s, tir_rechargement=%s WHERE id=%s""",
-                                (edit_sous_cat, edit_notes or None, edit_degats or None, edit_mains or None,
-                                 edit_force or None, edit_res or None, edit_m_dist or None, edit_portee or None,
+                        execute("""UPDATE equipements SET sous_categorie=%s, notes=%s, poids_kg=%s, prix_deniers=%s,
+                                   degats=%s, mains=%s, force_requise=%s, resistance=%s,
+                                   m_distance=%s, portee_max=%s, magasin=%s, tir_rechargement=%s WHERE id=%s""",
+                                (edit_sous_cat, edit_notes or None, edit_poids_kg, edit_prix,
+                                 edit_degats or None, edit_mains or None,
+                                 edit_force or None, edit_res or None,
+                                 edit_m_dist or None, edit_portee or None,
                                  edit_magasin or None, edit_tir_rech or None, eq_id_edit))
                     elif lancer_mode:
-                        execute("""UPDATE equipements SET sous_categorie=%s, notes=%s, degats=%s, mains=%s,
-                                   force_requise=%s, resistance=%s, m_distance=%s, portee_max=%s WHERE id=%s""",
-                                (edit_sous_cat, edit_notes or None, edit_degats or None, edit_mains or None,
-                                 edit_force or None, edit_res or None, edit_m_dist or None, edit_portee or None, eq_id_edit))
+                        execute("""UPDATE equipements SET sous_categorie=%s, notes=%s, poids_kg=%s, prix_deniers=%s,
+                                   degats=%s, mains=%s, force_requise=%s, resistance=%s,
+                                   m_distance=%s, portee_max=%s WHERE id=%s""",
+                                (edit_sous_cat, edit_notes or None, edit_poids_kg, edit_prix,
+                                 edit_degats or None, edit_mains or None,
+                                 edit_force or None, edit_res or None,
+                                 edit_m_dist or None, edit_portee or None, eq_id_edit))
                     else:
-                        execute("""UPDATE equipements SET sous_categorie=%s, notes=%s, degats=%s, mains=%s,
-                                   force_requise=%s, resistance=%s WHERE id=%s""",
-                                (edit_sous_cat, edit_notes or None, edit_degats or None, edit_mains or None,
+                        execute("""UPDATE equipements SET sous_categorie=%s, notes=%s, poids_kg=%s, prix_deniers=%s,
+                                   degats=%s, mains=%s, force_requise=%s, resistance=%s WHERE id=%s""",
+                                (edit_sous_cat, edit_notes or None, edit_poids_kg, edit_prix,
+                                 edit_degats or None, edit_mains or None,
                                  edit_force or None, edit_res or None, eq_id_edit))
                     invalidate_cache(); st.success(f"Stats de « {to_edit} » mises à jour."); st.rerun()
 
