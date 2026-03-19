@@ -174,6 +174,13 @@ COLS_ARMES_LANCER   = ["m_distance", "portee_max"]
 SOUS_CAT_TIR    = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde"}
 # Sous-catégories considérées comme armes de lancer
 SOUS_CAT_LANCER = {"Armes de lancer"}
+# Sous-catégories considérées comme armes de mêlée
+SOUS_CAT_MELEE  = {
+    "Épées à une main", "Épées à deux mains", "Hache à une main", "Haches à deux mains",
+    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Autre",
+}
+# Toutes les sous-catégories d'armes connues
+SOUS_CATS_ARMES = SOUS_CAT_TIR | SOUS_CAT_LANCER | SOUS_CAT_MELEE
 
 # Toutes les sous-catégories disponibles (pour le selectbox admin)
 TOUTES_SOUS_CATEGORIES = sorted([
@@ -204,6 +211,9 @@ def is_tir(sous_categorie: str) -> bool:
 
 def is_lancer(sous_categorie: str) -> bool:
     return str(sous_categorie) in SOUS_CAT_LANCER
+
+def is_arme(sous_categorie: str) -> bool:
+    return str(sous_categorie) in SOUS_CATS_ARMES
 
 # ─────────────────────────────────────────────
 #  CONNEXION NEON
@@ -417,7 +427,7 @@ def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: st
                     st.success("Illustration supprimée.")
                     st.rerun()
         else:
-            st.caption("Aucune illustration pour cette arme.")
+            st.caption("Aucune illustration pour cet objet.")
 
         if is_admin and eq_id is not None:
             st.markdown("---")
@@ -554,16 +564,26 @@ def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat", is_admin: bool
 
     st.markdown(f"**{len(filtered)}** objet(s) trouvé(s)")
 
-    mask_tir    = filtered["sous_categorie"].apply(is_tir)    if "sous_categorie" in filtered.columns else pd.Series(False, index=filtered.index)
-    mask_lancer = filtered["sous_categorie"].apply(is_lancer) if "sous_categorie" in filtered.columns else pd.Series(False, index=filtered.index)
-    df_melee  = filtered[~mask_tir & ~mask_lancer]
-    df_tir    = filtered[mask_tir]
-    df_lancer = filtered[mask_lancer]
+    # ── Séparation armes / autres équipements ──
+    if "sous_categorie" in filtered.columns:
+        mask_tir    = filtered["sous_categorie"].apply(is_tir)
+        mask_lancer = filtered["sous_categorie"].apply(is_lancer)
+        mask_arme   = filtered["sous_categorie"].apply(is_arme)
+        df_melee  = filtered[~mask_tir & ~mask_lancer & mask_arme]
+        df_tir    = filtered[mask_tir]
+        df_lancer = filtered[mask_lancer]
+        df_autres = filtered[~mask_arme]
+    else:
+        df_melee  = filtered
+        df_tir    = pd.DataFrame()
+        df_lancer = pd.DataFrame()
+        df_autres = pd.DataFrame()
 
-    tab_melee, tab_tir, tab_lancer = st.tabs([
+    tab_melee, tab_tir, tab_lancer, tab_autres = st.tabs([
         f"⚔️ Armes de mêlée ({len(df_melee)})",
         f"🏹 Armes de tir ({len(df_tir)})",
         f"🎯 Armes de lancer ({len(df_lancer)})",
+        f"🎒 Autres équipements ({len(df_autres)})",
     ])
 
     def _render_section(df_section, cols_fn, tab_prefix):
@@ -593,6 +613,31 @@ def afficher_catalogue(df: pd.DataFrame, key_prefix: str = "cat", is_admin: bool
 
     with tab_lancer:
         _render_section(df_lancer, _cols_display_lancer, f"{key_prefix}_lan")
+
+    with tab_autres:
+        if df_autres.empty:
+            st.caption("Aucun équipement dans cette sélection.")
+        else:
+            cols_base = ["categorie", "sous_categorie", "nom", "poids_kg", "prix_deniers", "notes"]
+            cols_show = [c for c in cols_base if c in df_autres.columns]
+            rename_base = {
+                "categorie": "Catégorie", "sous_categorie": "Sous-catégorie",
+                "nom": "Nom", "poids_kg": "Poids (kg)",
+                "prix_deniers": "Prix (deniers)", "notes": "Notes",
+            }
+            st.dataframe(df_autres[cols_show].rename(columns=rename_base), use_container_width=True, hide_index=True)
+            st.markdown("#### 🖼️ Illustrations")
+            rows_list = [df_autres.iloc[i] for i in range(len(df_autres))]
+            for i in range(0, len(rows_list), 3):
+                grid_cols = st.columns(3)
+                for j, col in enumerate(grid_cols):
+                    if i + j < len(rows_list):
+                        with col:
+                            afficher_illustration(
+                                rows_list[i + j],
+                                is_admin=is_admin,
+                                key_prefix=f"{key_prefix}_aut_{i+j}"
+                            )
 
 # ─────────────────────────────────────────────
 #  SESSION STATE
