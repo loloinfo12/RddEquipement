@@ -183,40 +183,57 @@ COLS_ARMES_COMMUNES = ["degats", "mains", "force_requise", "resistance"]
 COLS_ARMES_TIR      = ["m_distance", "portee_max", "magasin", "tir_rechargement"]
 COLS_ARMES_LANCER   = ["m_distance", "portee_max"]
 
+# ── Racines canoniques (sans accents sur la casse, comparaison par racine) ──
+# Stratégie : on normalise la sous-catégorie → racine en retirant le "s" final
+# et en mettant en minuscules. "Dagues" et "Dague" donnent tous deux "dague".
+
+def _normaliser(s: str) -> str:
+    """Normalise une sous-catégorie pour la comparaison : minuscules, sans s final."""
+    s = str(s).strip().lower()
+    return s[:-1] if s.endswith("s") and len(s) > 2 else s
+
+# Racines canoniques des sous-catégories de tir
+_RACINES_TIR = {_normaliser(x) for x in [
+    "Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde",
+]}
+# Racines canoniques des sous-catégories de lancer
+_RACINES_LANCER = {_normaliser(x) for x in [
+    "Armes de lancer",
+]}
+# Racines canoniques des sous-catégories de mêlée
+_RACINES_MELEE = {_normaliser(x) for x in [
+    "Épées à une main", "Épées à deux mains", "Haches à une main", "Haches à deux mains",
+    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Autre",
+]}
+_RACINES_ARMES = _RACINES_TIR | _RACINES_LANCER | _RACINES_MELEE
+
+# Listes affichées dans les selectbox (formes canoniques plurielles, propres)
 SOUS_CAT_TIR    = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde"}
 SOUS_CAT_LANCER = {"Armes de lancer"}
 SOUS_CAT_MELEE  = {
-    # Pluriels
-    "Épées à une main", "Épées à deux mains", "Hache à une main", "Haches à deux mains",
-    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux",
-    # Singuliers (variantes BDD)
-    "Épée à une main", "Épée à deux mains", "Hache à deux mains",
-    "Masse", "Lance", "Dague", "Bâton", "Fléau",
-    # Autres
-    "Autre",
+    "Épées à une main", "Épées à deux mains", "Haches à une main", "Haches à deux mains",
+    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Autre",
 }
 SOUS_CATS_ARMES = SOUS_CAT_TIR | SOUS_CAT_LANCER | SOUS_CAT_MELEE
 
-TOUTES_SOUS_CATEGORIES = sorted(set([
+TOUTES_SOUS_CATEGORIES = sorted([
     "Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde", "Armes de lancer",
-    "Épées à une main", "Épées à deux mains", "Hache à une main", "Haches à deux mains",
+    "Épées à une main", "Épées à deux mains", "Haches à une main", "Haches à deux mains",
     "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Autre",
-    "Épée à une main", "Épée à deux mains", "Hache à deux mains",
-    "Masse", "Lance", "Dague", "Bâton", "Fléau",
-]))
+])
 
 LABELS_COMMUNES = {"degats":"Dégâts","mains":"Mains","force_requise":"Force requise","resistance":"Résistance"}
 LABELS_TIR      = {"m_distance":"M. distance","portee_max":"Portée max","magasin":"Magasin","tir_rechargement":"Tir/Rechargement"}
 LABELS_LANCER   = {"m_distance":"M. distance","portee_max":"Portée max"}
 
 def is_tir(sous_categorie: str) -> bool:
-    return str(sous_categorie) in SOUS_CAT_TIR
+    return _normaliser(sous_categorie) in _RACINES_TIR
 
 def is_lancer(sous_categorie: str) -> bool:
-    return str(sous_categorie) in SOUS_CAT_LANCER
+    return _normaliser(sous_categorie) in _RACINES_LANCER
 
 def is_arme(sous_categorie: str) -> bool:
-    return str(sous_categorie) in SOUS_CATS_ARMES
+    return _normaliser(sous_categorie) in _RACINES_ARMES
 
 # ─────────────────────────────────────────────
 #  CONNEXION NEON
@@ -261,6 +278,45 @@ def login(username: str, password: str):
     return dict(rows[0]) if rows else None
 
 # ─────────────────────────────────────────────
+#  NORMALISATION SOUS-CATÉGORIES
+# ─────────────────────────────────────────────
+# Table de correspondance : racine → forme canonique affichée (pluriel propre)
+_CANON_MAP = {
+    _normaliser(k): v for k, v in [
+        ("Arbalètes",        "Arbalètes"),
+        ("Arcs",             "Arcs"),
+        ("Armes de poing",   "Armes de poing"),
+        ("Armes d'épaule",  "Armes d'épaule"),
+        ("Frondes",          "Frondes"),
+        ("Fronde",           "Frondes"),
+        ("Armes de lancer",  "Armes de lancer"),
+        ("Épées à une main", "Épées à une main"),
+        ("Épées à deux mains","Épées à deux mains"),
+        ("Haches à une main","Haches à une main"),
+        ("Haches à deux mains","Haches à deux mains"),
+        ("Masses",           "Masses"),
+        ("Lances",           "Lances"),
+        ("Dagues",           "Dagues"),
+        ("Bâtons",           "Bâtons"),
+        ("Fléaux",           "Fléaux"),
+        ("Autre",            "Autre"),
+    ]
+}
+
+def canoniser_sous_cat(s: str) -> str:
+    """Retourne la forme canonique (plurielle) d'une sous-catégorie."""
+    return _CANON_MAP.get(_normaliser(s), s)  # si inconnu, on garde tel quel
+
+def _appliquer_canon(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalise la colonne sous_categorie d'un DataFrame."""
+    if not df.empty and "sous_categorie" in df.columns:
+        df = df.copy()
+        df["sous_categorie"] = df["sous_categorie"].apply(
+            lambda x: canoniser_sous_cat(str(x)) if x else x
+        )
+    return df
+
+# ─────────────────────────────────────────────
 #  DATA HELPERS
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=30)
@@ -269,7 +325,8 @@ def load_equipements() -> pd.DataFrame:
                            degats, mains, force_requise, resistance, m_distance, portee_max,
                            magasin, tir_rechargement, svg_illustration
                     FROM equipements ORDER BY categorie, sous_categorie, nom""")
-    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+    df = pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+    return _appliquer_canon(df)
 
 @st.cache_data(ttl=30)
 def load_inventory(player_id: int) -> pd.DataFrame:
@@ -284,7 +341,8 @@ def load_inventory(player_id: int) -> pd.DataFrame:
         WHERE i.player_id = %s
         ORDER BY i.localisation, e.categorie, e.nom
     """, (player_id,))
-    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+    df = pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+    return _appliquer_canon(df)
 
 @st.cache_data(ttl=30)
 def load_player_info(player_id: int) -> dict:
@@ -1253,7 +1311,8 @@ def load_inventory_v2(player_id: int) -> pd.DataFrame:
         WHERE i.player_id = %s
         ORDER BY i.conteneur, e.categorie, e.nom
     """, (player_id,))
-    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+    df = pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+    return _appliquer_canon(df)
 
 def invalidate_cache_v2():
     invalidate_cache()
