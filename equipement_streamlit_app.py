@@ -186,16 +186,24 @@ COLS_ARMES_LANCER   = ["m_distance", "portee_max"]
 SOUS_CAT_TIR    = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde"}
 SOUS_CAT_LANCER = {"Armes de lancer"}
 SOUS_CAT_MELEE  = {
+    # Pluriels
     "Épées à une main", "Épées à deux mains", "Hache à une main", "Haches à deux mains",
-    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Autre",
+    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux",
+    # Singuliers (variantes BDD)
+    "Épée à une main", "Épée à deux mains", "Hache à deux mains",
+    "Masse", "Lance", "Dague", "Bâton", "Fléau",
+    # Autres
+    "Autre",
 }
 SOUS_CATS_ARMES = SOUS_CAT_TIR | SOUS_CAT_LANCER | SOUS_CAT_MELEE
 
-TOUTES_SOUS_CATEGORIES = sorted([
+TOUTES_SOUS_CATEGORIES = sorted(set([
     "Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde", "Armes de lancer",
     "Épées à une main", "Épées à deux mains", "Hache à une main", "Haches à deux mains",
     "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Autre",
-])
+    "Épée à une main", "Épée à deux mains", "Hache à deux mains",
+    "Masse", "Lance", "Dague", "Bâton", "Fléau",
+]))
 
 LABELS_COMMUNES = {"degats":"Dégâts","mains":"Mains","force_requise":"Force requise","resistance":"Résistance"}
 LABELS_TIR      = {"m_distance":"M. distance","portee_max":"Portée max","magasin":"Magasin","tir_rechargement":"Tir/Rechargement"}
