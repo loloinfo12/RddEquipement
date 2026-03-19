@@ -183,43 +183,64 @@ COLS_ARMES_COMMUNES = ["degats", "mains", "force_requise", "resistance"]
 COLS_ARMES_TIR      = ["m_distance", "portee_max", "magasin", "tir_rechargement"]
 COLS_ARMES_LANCER   = ["m_distance", "portee_max"]
 
-# ── Racines canoniques (sans accents sur la casse, comparaison par racine) ──
-# Stratégie : on normalise la sous-catégorie → racine en retirant le "s" final
-# et en mettant en minuscules. "Dagues" et "Dague" donnent tous deux "dague".
+# ─────────────────────────────────────────────
+#  TABLE DE CANONISATION DES SOUS-CATÉGORIES
+# ─────────────────────────────────────────────
+# Mappe TOUTE variante connue (singulier, pluriel, casse) vers la forme canonique.
+# Les clés sont en minuscules pour comparaison insensible à la casse.
+_CANON_TABLE: dict[str, str] = {
+    # Armes de tir
+    "arbalète": "Arbalètes", "arbalètes": "Arbalètes",
+    "arc": "Arcs", "arcs": "Arcs",
+    "arme de poing": "Armes de poing", "armes de poing": "Armes de poing",
+    "arme d'épaule": "Armes d'épaule", "armes d'épaule": "Armes d'épaule",
+    "fronde": "Frondes", "frondes": "Frondes",
+    # Armes de lancer
+    "arme de lancer": "Armes de lancer", "armes de lancer": "Armes de lancer",
+    # Épées
+    "épée à une main": "Épées à une main", "épées à une main": "Épées à une main",
+    "epée à une main": "Épées à une main", "epées à une main": "Épées à une main",
+    "épée à deux mains": "Épées à deux mains", "épées à deux mains": "Épées à deux mains",
+    "epée à deux mains": "Épées à deux mains", "epées à deux mains": "Épées à deux mains",
+    # Haches
+    "hache à une main": "Haches à une main", "haches à une main": "Haches à une main",
+    "hache à deux mains": "Haches à deux mains", "haches à deux mains": "Haches à deux mains",
+    # Autres mêlée
+    "masse": "Masses", "masses": "Masses",
+    "lance": "Lances", "lances": "Lances",
+    "dague": "Dagues", "dagues": "Dagues",
+    "bâton": "Bâtons", "bâtons": "Bâtons",
+    "fléau": "Fléaux", "fléaux": "Fléaux",
+    "fouet": "Fouets", "fouets": "Fouets",
+    "autre": "Autre",
+}
 
-def _normaliser(s: str) -> str:
-    """Normalise une sous-catégorie pour la comparaison : minuscules, sans s final."""
-    s = str(s).strip().lower()
-    return s[:-1] if s.endswith("s") and len(s) > 2 else s
+def canoniser_sous_cat(s: str) -> str:
+    """Retourne la forme canonique d'une sous-catégorie (insensible à la casse)."""
+    return _CANON_TABLE.get(str(s).strip().lower(), s)
 
-# Racines canoniques des sous-catégories de tir
-_RACINES_TIR = {_normaliser(x) for x in [
-    "Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde",
-]}
-# Racines canoniques des sous-catégories de lancer
-_RACINES_LANCER = {_normaliser(x) for x in [
-    "Armes de lancer",
-]}
-# Racines canoniques des sous-catégories de mêlée
-_RACINES_MELEE = {_normaliser(x) for x in [
-    "Épées à une main", "Épées à deux mains", "Haches à une main", "Haches à deux mains",
-    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Autre",
-]}
-_RACINES_ARMES = _RACINES_TIR | _RACINES_LANCER | _RACINES_MELEE
+def _appliquer_canon(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Normalise la colonne sous_categorie d'un DataFrame."""
+    if not df.empty and "sous_categorie" in df.columns:
+        df = df.copy()
+        df["sous_categorie"] = df["sous_categorie"].apply(
+            lambda x: canoniser_sous_cat(str(x)) if x else x
+        )
+    return df
 
-# Listes affichées dans les selectbox (formes canoniques plurielles, propres)
-SOUS_CAT_TIR    = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde"}
+# Sous-catégories canoniques pour les filtres is_tir / is_lancer / is_arme
+SOUS_CAT_TIR    = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Frondes"}
 SOUS_CAT_LANCER = {"Armes de lancer"}
 SOUS_CAT_MELEE  = {
     "Épées à une main", "Épées à deux mains", "Haches à une main", "Haches à deux mains",
-    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Autre",
+    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Fouets", "Autre",
 }
 SOUS_CATS_ARMES = SOUS_CAT_TIR | SOUS_CAT_LANCER | SOUS_CAT_MELEE
 
 TOUTES_SOUS_CATEGORIES = sorted([
-    "Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Fronde", "Armes de lancer",
+    "Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Frondes", "Armes de lancer",
     "Épées à une main", "Épées à deux mains", "Haches à une main", "Haches à deux mains",
-    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Autre",
+    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Fouets", "Autre",
 ])
 
 LABELS_COMMUNES = {"degats":"Dégâts","mains":"Mains","force_requise":"Force requise","resistance":"Résistance"}
@@ -227,13 +248,13 @@ LABELS_TIR      = {"m_distance":"M. distance","portee_max":"Portée max","magasi
 LABELS_LANCER   = {"m_distance":"M. distance","portee_max":"Portée max"}
 
 def is_tir(sous_categorie: str) -> bool:
-    return _normaliser(sous_categorie) in _RACINES_TIR
+    return canoniser_sous_cat(sous_categorie) in SOUS_CAT_TIR
 
 def is_lancer(sous_categorie: str) -> bool:
-    return _normaliser(sous_categorie) in _RACINES_LANCER
+    return canoniser_sous_cat(sous_categorie) in SOUS_CAT_LANCER
 
 def is_arme(sous_categorie: str) -> bool:
-    return _normaliser(sous_categorie) in _RACINES_ARMES
+    return canoniser_sous_cat(sous_categorie) in SOUS_CATS_ARMES
 
 # ─────────────────────────────────────────────
 #  CONNEXION NEON
@@ -276,45 +297,6 @@ def login(username: str, password: str):
     rows = query("SELECT * FROM users WHERE username=%s AND password_hash=%s",
                  (username, hash_password(password)))
     return dict(rows[0]) if rows else None
-
-# ─────────────────────────────────────────────
-#  NORMALISATION SOUS-CATÉGORIES
-# ─────────────────────────────────────────────
-# Table de correspondance : racine → forme canonique affichée (pluriel propre)
-_CANON_MAP = {
-    _normaliser(k): v for k, v in [
-        ("Arbalètes",        "Arbalètes"),
-        ("Arcs",             "Arcs"),
-        ("Armes de poing",   "Armes de poing"),
-        ("Armes d'épaule",  "Armes d'épaule"),
-        ("Frondes",          "Frondes"),
-        ("Fronde",           "Frondes"),
-        ("Armes de lancer",  "Armes de lancer"),
-        ("Épées à une main", "Épées à une main"),
-        ("Épées à deux mains","Épées à deux mains"),
-        ("Haches à une main","Haches à une main"),
-        ("Haches à deux mains","Haches à deux mains"),
-        ("Masses",           "Masses"),
-        ("Lances",           "Lances"),
-        ("Dagues",           "Dagues"),
-        ("Bâtons",           "Bâtons"),
-        ("Fléaux",           "Fléaux"),
-        ("Autre",            "Autre"),
-    ]
-}
-
-def canoniser_sous_cat(s: str) -> str:
-    """Retourne la forme canonique (plurielle) d'une sous-catégorie."""
-    return _CANON_MAP.get(_normaliser(s), s)  # si inconnu, on garde tel quel
-
-def _appliquer_canon(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalise la colonne sous_categorie d'un DataFrame."""
-    if not df.empty and "sous_categorie" in df.columns:
-        df = df.copy()
-        df["sous_categorie"] = df["sous_categorie"].apply(
-            lambda x: canoniser_sous_cat(str(x)) if x else x
-        )
-    return df
 
 # ─────────────────────────────────────────────
 #  DATA HELPERS
