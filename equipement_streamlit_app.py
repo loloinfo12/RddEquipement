@@ -226,6 +226,19 @@ _CANON_TABLE: dict[str, str] = {
     "hallebarde": "Lances", "hallebardes": "Lances",
     "pique": "Lances", "piques": "Lances",
     "matériel de siège": "Matériel de siège",
+    # ── Armes d'hast ──
+    "arme d'hast": "Armes d'hast", "armes d'hast": "Armes d'hast",
+    "arme dhast": "Armes d'hast", "armes dhast": "Armes d'hast",
+    "bardiche": "Armes d'hast", "bardiches": "Armes d'hast",
+    "bec de corbin": "Armes d'hast", "becs de corbin": "Armes d'hast",
+    "doloire": "Armes d'hast", "doloires": "Armes d'hast",
+    "doloire-guisarme": "Armes d'hast",
+    "esponton": "Armes d'hast", "espontons": "Armes d'hast",
+    "fauchard": "Armes d'hast", "fauchards": "Armes d'hast",
+    "fauchard-crochet": "Armes d'hast",
+    "fourche": "Armes d'hast", "fourches": "Armes d'hast",
+    "fourche-fauchard": "Armes d'hast",
+    "guisarme": "Armes d'hast", "guisarmes": "Armes d'hast",
     "autre": "Autre",
 }
 
@@ -247,7 +260,7 @@ SOUS_CAT_MELEE  = {
     "Haches à une main", "Haches à deux mains",
     "Masses", "Masses à une main", "Masses à deux mains",
     "Lances", "Dagues", "Bâtons", "Fléaux", "Fouets",
-    "Matériel de siège", "Autre",
+    "Armes d'hast", "Matériel de siège", "Autre",
 }
 SOUS_CATS_ARMES = SOUS_CAT_TIR | SOUS_CAT_LANCER | SOUS_CAT_MELEE
 
@@ -258,7 +271,7 @@ TOUTES_SOUS_CATEGORIES = sorted([
     "Haches à une main", "Haches à deux mains",
     "Masses", "Masses à une main", "Masses à deux mains",
     "Lances", "Dagues", "Bâtons", "Fléaux", "Fouets",
-    "Matériel de siège", "Autre",
+    "Armes d'hast", "Matériel de siège", "Autre",
 ])
 
 LABELS_COMMUNES = {"degats":"Dégâts","mains":"Mains","force_requise":"Force requise","resistance":"Résistance"}
