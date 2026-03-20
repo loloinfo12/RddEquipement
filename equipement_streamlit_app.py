@@ -187,29 +187,45 @@ COLS_ARMES_LANCER   = ["m_distance", "portee_max"]
 #  TABLE DE CANONISATION DES SOUS-CATÉGORIES
 # ─────────────────────────────────────────────
 _CANON_TABLE: dict[str, str] = {
-    # Armes de tir
+    # ── Armes de tir ──
     "arbalète": "Arbalètes", "arbalètes": "Arbalètes",
     "arc": "Arcs", "arcs": "Arcs",
     "arme de poing": "Armes de poing", "armes de poing": "Armes de poing",
     "arme d'épaule": "Armes d'épaule", "armes d'épaule": "Armes d'épaule",
     "fronde": "Frondes", "frondes": "Frondes",
-    # Armes de lancer
+    "sarbacane": "Sarbacanes", "sarbacanes": "Sarbacanes",
+    # ── Armes de lancer ──
     "arme de lancer": "Armes de lancer", "armes de lancer": "Armes de lancer",
-    # Épées
+    # ── Épées ──
+    "épée": "Épées", "épées": "Épées", "epée": "Épées", "epées": "Épées",
     "épée à une main": "Épées à une main", "épées à une main": "Épées à une main",
     "epée à une main": "Épées à une main", "epées à une main": "Épées à une main",
     "épée à deux mains": "Épées à deux mains", "épées à deux mains": "Épées à deux mains",
     "epée à deux mains": "Épées à deux mains", "epées à deux mains": "Épées à deux mains",
-    # Haches
+    # ── Haches ──
+    "hache": "Haches à une main", "haches": "Haches à une main",
     "hache à une main": "Haches à une main", "haches à une main": "Haches à une main",
     "hache à deux mains": "Haches à deux mains", "haches à deux mains": "Haches à deux mains",
-    # Autres mêlée
+    # ── Masses ──
     "masse": "Masses", "masses": "Masses",
+    "masse à une main": "Masses à une main", "masses à une main": "Masses à une main",
+    "masse à deux mains": "Masses à deux mains", "masses à deux mains": "Masses à deux mains",
+    "massette": "Masses", "massettes": "Masses",
+    "marteau": "Masses", "marteaux": "Masses",
+    "marteau de guerre": "Masses", "marteaux de guerre": "Masses",
+    # ── Autres mêlée ──
     "lance": "Lances", "lances": "Lances",
     "dague": "Dagues", "dagues": "Dagues",
     "bâton": "Bâtons", "bâtons": "Bâtons",
     "fléau": "Fléaux", "fléaux": "Fléaux",
     "fouet": "Fouets", "fouets": "Fouets",
+    "estoc": "Épées à une main", "estocs": "Épées à une main",
+    "cimeterre": "Épées à une main", "cimeterres": "Épées à une main",
+    "sabre": "Épées à une main", "sabres": "Épées à une main",
+    "claymore": "Épées à deux mains", "claymores": "Épées à deux mains",
+    "hallebarde": "Lances", "hallebardes": "Lances",
+    "pique": "Lances", "piques": "Lances",
+    "matériel de siège": "Matériel de siège",
     "autre": "Autre",
 }
 
@@ -224,18 +240,25 @@ def _appliquer_canon(df: "pd.DataFrame") -> "pd.DataFrame":
         )
     return df
 
-SOUS_CAT_TIR    = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Frondes"}
+SOUS_CAT_TIR    = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Frondes", "Sarbacanes"}
 SOUS_CAT_LANCER = {"Armes de lancer"}
 SOUS_CAT_MELEE  = {
-    "Épées à une main", "Épées à deux mains", "Haches à une main", "Haches à deux mains",
-    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Fouets", "Autre",
+    "Épées", "Épées à une main", "Épées à deux mains",
+    "Haches à une main", "Haches à deux mains",
+    "Masses", "Masses à une main", "Masses à deux mains",
+    "Lances", "Dagues", "Bâtons", "Fléaux", "Fouets",
+    "Matériel de siège", "Autre",
 }
 SOUS_CATS_ARMES = SOUS_CAT_TIR | SOUS_CAT_LANCER | SOUS_CAT_MELEE
 
 TOUTES_SOUS_CATEGORIES = sorted([
-    "Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Frondes", "Armes de lancer",
-    "Épées à une main", "Épées à deux mains", "Haches à une main", "Haches à deux mains",
-    "Masses", "Lances", "Dagues", "Bâtons", "Fléaux", "Fouets", "Autre",
+    "Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Frondes", "Sarbacanes",
+    "Armes de lancer",
+    "Épées", "Épées à une main", "Épées à deux mains",
+    "Haches à une main", "Haches à deux mains",
+    "Masses", "Masses à une main", "Masses à deux mains",
+    "Lances", "Dagues", "Bâtons", "Fléaux", "Fouets",
+    "Matériel de siège", "Autre",
 ])
 
 LABELS_COMMUNES = {"degats":"Dégâts","mains":"Mains","force_requise":"Force requise","resistance":"Résistance"}
