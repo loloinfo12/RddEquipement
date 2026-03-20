@@ -186,8 +186,6 @@ COLS_ARMES_LANCER   = ["m_distance", "portee_max"]
 # ─────────────────────────────────────────────
 #  TABLE DE CANONISATION DES SOUS-CATÉGORIES
 # ─────────────────────────────────────────────
-# Mappe TOUTE variante connue (singulier, pluriel, casse) vers la forme canonique.
-# Les clés sont en minuscules pour comparaison insensible à la casse.
 _CANON_TABLE: dict[str, str] = {
     # Armes de tir
     "arbalète": "Arbalètes", "arbalètes": "Arbalètes",
@@ -216,11 +214,9 @@ _CANON_TABLE: dict[str, str] = {
 }
 
 def canoniser_sous_cat(s: str) -> str:
-    """Retourne la forme canonique d'une sous-catégorie (insensible à la casse)."""
     return _CANON_TABLE.get(str(s).strip().lower(), s)
 
 def _appliquer_canon(df: "pd.DataFrame") -> "pd.DataFrame":
-    """Normalise la colonne sous_categorie d'un DataFrame."""
     if not df.empty and "sous_categorie" in df.columns:
         df = df.copy()
         df["sous_categorie"] = df["sous_categorie"].apply(
@@ -228,7 +224,6 @@ def _appliquer_canon(df: "pd.DataFrame") -> "pd.DataFrame":
         )
     return df
 
-# Sous-catégories canoniques pour les filtres is_tir / is_lancer / is_arme
 SOUS_CAT_TIR    = {"Arbalètes", "Arcs", "Armes de poing", "Armes d'épaule", "Frondes"}
 SOUS_CAT_LANCER = {"Armes de lancer"}
 SOUS_CAT_MELEE  = {
@@ -351,15 +346,20 @@ ENC_PAR_KG = 0.5  # facteur : kg → enc
 
 def enc(kg) -> str:
     """Convertit des kg en points d'encombrement affichables."""
-    val = (kg or 0) * ENC_PAR_KG
+    try:
+        val = float(kg or 0) * ENC_PAR_KG
+    except (TypeError, ValueError):
+        val = 0.0
     if val == 0:
         return "0"
-    # Affiche sans décimale si entier, sinon 1 décimale
     return str(int(val)) if val == int(val) else f"{val:.1f}"
 
 def enc_val(kg) -> float:
     """Retourne la valeur numérique en enc."""
-    return (kg or 0) * ENC_PAR_KG
+    try:
+        return float(kg or 0) * ENC_PAR_KG
+    except (TypeError, ValueError):
+        return 0.0
 
 # ─────────────────────────────────────────────
 #  GÉNÉRATION PDF FICHE ÉQUIPEMENT
@@ -518,8 +518,8 @@ def generer_fiche_pdf(nom_perso: str, df_inv: pd.DataFrame, monture: str, poids_
             lines.append(("", ""))
         return lines[:max_n]
 
-    poids_soi_total  = df_soi["poids_total"].sum()  if not df_soi.empty  else 0
-    poids_mont_total = df_monture["poids_total"].sum() if not df_monture.empty else 0
+    poids_soi_total  = float(df_soi["poids_total"].sum())  if not df_soi.empty  else 0.0
+    poids_mont_total = float(df_monture["poids_total"].sum()) if not df_monture.empty else 0.0
     poids_total      = poids_soi_total + poids_mont_total
     monture_label    = monture if (monture and monture != "Aucune") else "Monture"
 
@@ -909,7 +909,6 @@ def page_admin():
                 edit_sous_cat = st.selectbox("Sous-catégorie", all_sous, index=sous_idx)
                 edit_notes = st.text_input("Notes", value=str(row_edit.get("notes") or ""))
 
-                # Ligne encombrement + prix
                 ce1, ce2, ce3 = st.columns(3)
                 with ce1:
                     poids_actuel_enc = float(row_edit.get("poids_kg") or 0) * ENC_PAR_KG
@@ -949,7 +948,7 @@ def page_admin():
                     else:
                         edit_magasin = edit_tir_rech = ""
                 if st.form_submit_button("💾 Sauvegarder les stats"):
-                    edit_poids_kg = edit_enc / ENC_PAR_KG  # reconversion enc → kg pour la BDD
+                    edit_poids_kg = edit_enc / ENC_PAR_KG
                     if tir_mode:
                         execute("""UPDATE equipements SET sous_categorie=%s, notes=%s, poids_kg=%s, prix_deniers=%s,
                                    degats=%s, mains=%s, force_requise=%s, resistance=%s,
@@ -1117,8 +1116,8 @@ def page_admin():
                 df_inv["poids_total"] = df_inv["poids_kg"] * df_inv["quantite"]
                 df_soi  = df_inv[df_inv["localisation"] == "soi"]
                 df_mont = df_inv[df_inv["localisation"] == "monture"]
-                poids_soi  = df_soi["poids_total"].sum()
-                poids_mont = df_mont["poids_total"].sum()
+                poids_soi  = float(df_soi["poids_total"].sum())
+                poids_mont = float(df_mont["poids_total"].sum())
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     st.markdown(f"""<div class="metric-card"><div class="metric-value">{len(df_inv)}</div>
@@ -1143,7 +1142,7 @@ def page_admin():
                         df_c["poids_total"] = df_c["poids_kg"] * df_c["quantite"]
                         mask_tir    = df_c["sous_categorie"].apply(is_tir)
                         mask_lancer = df_c["sous_categorie"].apply(is_lancer)
-                        with st.expander(f"{label_icon} {cat}  •  {enc(df_c['poids_total'].sum())} enc.", expanded=False):
+                        with st.expander(f"{label_icon} {cat}  •  {enc(float(df_c['poids_total'].sum()))} enc.", expanded=False):
                             for df_sub, fn, lbl in [
                                 (df_c[~mask_tir & ~mask_lancer], _cols_display_melee, "*Mêlée*"),
                                 (df_c[mask_tir],                 _cols_display_tir,   "*Tir*"),
@@ -1250,7 +1249,6 @@ def page_admin():
 # ─────────────────────────────────────────────
 #  CONTENEURS
 # ─────────────────────────────────────────────
-# Mapping conteneur → localisation BDD (soi / monture)
 CONTENEURS_SOI = ["Porté sur soi", "Sac à dos", "Ceinturon", "Bourse", "Outre / Gourde", "Etui"]
 CONTENEURS_MONTURE = ["Monture"]
 
@@ -1271,7 +1269,6 @@ def conteneur_to_localisation(conteneur: str) -> str:
 
 @st.cache_data(ttl=30)
 def load_conteneurs_joueur(player_id: int) -> list:
-    """Charge les conteneurs personnalisés du joueur."""
     rows = query(
         "SELECT id, nom, icone FROM conteneurs_joueur WHERE player_id=%s ORDER BY id",
         (player_id,)
@@ -1280,7 +1277,6 @@ def load_conteneurs_joueur(player_id: int) -> list:
 
 @st.cache_data(ttl=30)
 def load_inventory_v2(player_id: int) -> pd.DataFrame:
-    """Charge l'inventaire avec la colonne conteneur."""
     rows = query("""
         SELECT i.id AS inv_id, i.quantite, i.localisation,
                COALESCE(i.conteneur, 'Porté sur soi') AS conteneur,
@@ -1307,7 +1303,6 @@ def invalidate_cache_v2():
 def page_joueur():
     user = st.session_state.user
 
-    # ── CSS parchemin spécifique à la fiche joueur ──
     st.markdown("""
     <style>
     .fiche-wrapper {
@@ -1423,19 +1418,16 @@ def page_joueur():
                         (new_monture, new_poids_max * 2, user["id"]))
                 invalidate_cache_v2(); st.success("Paramètres sauvegardés !"); st.rerun()
 
-        # ── Conteneurs perso du joueur ──
         conteneurs_perso = load_conteneurs_joueur(user["id"])
         noms_perso  = [cp["nom"]   for cp in conteneurs_perso]
         icones_perso = {cp["nom"]: cp["icone"] for cp in conteneurs_perso}
         ids_perso    = {cp["nom"]: cp["id"]    for cp in conteneurs_perso}
 
-        # Tous les conteneurs disponibles (fixes + perso)
         conteneurs_dispos = CONTENEURS_SOI.copy()
         if monture_actuelle != "Aucune":
             conteneurs_dispos += CONTENEURS_MONTURE
         conteneurs_dispos += noms_perso
 
-        # Icones complètes (fixes + perso)
         icones_all = {**CONTENEUR_ICONE, **icones_perso}
 
         df_inv = load_inventory_v2(user["id"])
@@ -1446,13 +1438,11 @@ def page_joueur():
             df_inv = df_inv.copy()
             df_inv["poids_total"] = df_inv["poids_kg"] * df_inv["quantite"]
 
-            # Calculs globaux
             mask_soi    = df_inv["conteneur"].apply(lambda x: conteneur_to_localisation(x) == "soi")
-            poids_soi   = df_inv[mask_soi]["poids_total"].sum()
-            poids_mont  = df_inv[~mask_soi]["poids_total"].sum()
-            poids_total = df_inv["poids_total"].sum()
+            poids_soi   = float(df_inv[mask_soi]["poids_total"].sum())
+            poids_mont  = float(df_inv[~mask_soi]["poids_total"].sum())
+            poids_total = float(df_inv["poids_total"].sum())
 
-            # ── Bouton PDF ──
             col_pdf, col_info = st.columns([1, 3])
             with col_pdf:
                 pdf_bytes = generer_fiche_pdf(
@@ -1480,10 +1470,6 @@ def page_joueur():
                 )
             st.markdown("")
 
-            # ════════════════════════════════════════════════
-            #  FICHE PARCHEMIN — 3 colonnes comme le PDF
-            # ════════════════════════════════════════════════
-
             def _html_items(df_c: pd.DataFrame) -> str:
                 if df_c.empty:
                     return "<div style='color:#a09070;font-style:italic;font-size:0.78rem;padding:4px 0;'>— vide —</div>"
@@ -1491,7 +1477,7 @@ def page_joueur():
                 for _, row in df_c.iterrows():
                     nom     = str(row.get("nom", ""))
                     qty     = int(row.get("quantite", 1))
-                    poids   = row.get("poids_total", 0) or 0
+                    poids   = float(row.get("poids_total", 0) or 0)
                     degats  = str(row.get("degats", "") or "")
                     label   = (nom + " ×" + str(qty)) if qty > 1 else nom
                     stat_html  = ("<span class='item-stat'>" + degats + "</span>") if degats else ""
@@ -1505,7 +1491,7 @@ def page_joueur():
                 return "".join(parts)
 
             def _conteneur_html(nom_cont: str, df_c: pd.DataFrame, icone: str = "📦") -> str:
-                poids   = df_c["poids_total"].sum() if not df_c.empty else 0
+                poids   = float(df_c["poids_total"].sum()) if not df_c.empty else 0.0
                 poids_s = enc(poids) + " enc." if poids > 0 else "vide"
                 return (
                     "<div class='conteneur-box'>"
@@ -1517,7 +1503,6 @@ def page_joueur():
                     "</div>"
                 )
 
-            # ── Colonnes fixes ──
             col_a_items = ["Porté sur soi", "Sac à dos"]
             col_b_items = ["Ceinturon", "Bourse", "Outre / Gourde", "Etui"]
 
@@ -1531,11 +1516,10 @@ def page_joueur():
                 df_c = df_inv[df_inv["conteneur"] == cont]
                 html_b += _conteneur_html(cont, df_c, icones_all.get(cont, "📦"))
 
-            # ── Colonne C : Armes + Armures + Monture ──
             df_armes   = df_inv[df_inv["sous_categorie"].apply(is_arme)]
             df_armures = df_inv[df_inv["categorie"].str.lower().str.contains("armure", na=False)]
-            poids_armes   = df_armes["poids_total"].sum()
-            poids_armures = df_armures["poids_total"].sum()
+            poids_armes   = float(df_armes["poids_total"].sum())
+            poids_armures = float(df_armures["poids_total"].sum())
 
             html_c += (
                 "<div class='conteneur-box'>"
@@ -1561,7 +1545,6 @@ def page_joueur():
                 df_c = df_inv[df_inv["conteneur"] == "Monture"]
                 html_c += _conteneur_html("Monture", df_c, "🐴")
 
-            # ── Conteneurs personnalisés : répartis en bas des 3 colonnes ──
             for idx, nom_cp in enumerate(noms_perso):
                 df_c  = df_inv[df_inv["conteneur"] == nom_cp]
                 icone = icones_perso.get(nom_cp, "🗃️")
@@ -1570,7 +1553,6 @@ def page_joueur():
                 elif idx % 3 == 1: html_b += bloc
                 else:              html_c += bloc
 
-            # Poids total
             alert_cls = "poids-alert" if poids_max > 0 and poids_soi > poids_max else ""
             total_html = (
                 "<div class='fiche-total " + alert_cls + "'>"
@@ -1593,9 +1575,6 @@ def page_joueur():
             )
             st.markdown(fiche_html, unsafe_allow_html=True)
 
-        # ════════════════════════════════════════════════
-        #  GESTION : Déplacer conteneur / Retirer
-        # ════════════════════════════════════════════════
         if not df_inv.empty:
             st.markdown("---")
             c1, c2 = st.columns(2)
@@ -1629,7 +1608,6 @@ def page_joueur():
         st.markdown("---")
         st.markdown("##### Ajouter un objet à mon inventaire")
         if not df.empty:
-            # Recharger les conteneurs perso pour cet onglet
             conts_perso2 = [cp["nom"] for cp in load_conteneurs_joueur(user["id"])]
             pinfo2       = load_player_info(user["id"])
             monture2     = pinfo2.get("monture") or "Aucune"
@@ -1657,16 +1635,12 @@ def page_joueur():
                     st.success(f"« {chosen_eq} » (×{qty}) → {icone_ch} {chosen_cont} !")
                     st.rerun()
 
-    # ════════════════════════════════════════════════
-    #  TAB 3 : Gestion des conteneurs personnalisés
-    # ════════════════════════════════════════════════
     with tab3:
         st.markdown("#### 🗃️ Mes conteneurs personnalisés")
         st.caption("Créez vos propres sections de rangement : sacoche de selle, boîte à alchimie, étui à cartes…")
 
         conteneurs_perso3 = load_conteneurs_joueur(user["id"])
 
-        # ── Créer un nouveau conteneur ──
         with st.form("form_nouveau_conteneur", clear_on_submit=True):
             st.markdown("##### ➕ Nouveau conteneur")
             c1, c2, c3 = st.columns([3, 1, 1])
@@ -1694,7 +1668,6 @@ def page_joueur():
 
         st.markdown("---")
 
-        # ── Liste des conteneurs existants ──
         if not conteneurs_perso3:
             st.info("Vous n'avez pas encore de conteneur personnalisé.")
         else:
@@ -1716,7 +1689,6 @@ def page_joueur():
                 with c3:
                     if st.button("🗑️ Supprimer", key=f"del_cont_{cp['id']}"):
                         if nb_items > 0:
-                            # Remettre les objets dans "Porté sur soi"
                             execute(
                                 "UPDATE inventaire SET conteneur='Porté sur soi', localisation='soi' WHERE player_id=%s AND conteneur=%s",
                                 (user["id"], cp["nom"])
