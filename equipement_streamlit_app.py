@@ -1188,7 +1188,12 @@ def page_admin():
                                     st.markdown(lbl)
                                     cols_, ren_ = fn(df_sub)
                                     extra = ["quantite","poids_total","localisation"]
-                                    show  = [c for c in extra + cols_ if c in df_sub.columns]
+                                    seen = set()
+                                    show = []
+                                    for col_ in extra + cols_:
+                                        if col_ in df_sub.columns and col_ not in seen:
+                                            show.append(col_)
+                                            seen.add(col_)
                                     ren_.update({"quantite":"Qté","poids_total":"Enc.","localisation":"Lieu"})
                                     st.dataframe(df_sub[show].rename(columns=ren_), use_container_width=True, hide_index=True)
 
