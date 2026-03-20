@@ -1188,14 +1188,24 @@ def page_admin():
                                     st.markdown(lbl)
                                     cols_, ren_ = fn(df_sub)
                                     extra = ["quantite","poids_total","localisation"]
+                                    # poids_kg exclu : on affiche poids_total à la place (même label "Enc." sinon doublon)
+                                    exclude = {"poids_kg"}
                                     seen = set()
                                     show = []
                                     for col_ in extra + cols_:
-                                        if col_ in df_sub.columns and col_ not in seen:
+                                        if col_ in df_sub.columns and col_ not in seen and col_ not in exclude:
                                             show.append(col_)
                                             seen.add(col_)
                                     ren_.update({"quantite":"Qté","poids_total":"Enc.","localisation":"Lieu"})
-                                    st.dataframe(df_sub[show].rename(columns=ren_), use_container_width=True, hide_index=True)
+                                    # S'assurer qu'aucun label cible n'est en doublon après rename
+                                    labels_vus = set()
+                                    show_final = []
+                                    for col_ in show:
+                                        label = ren_.get(col_, col_)
+                                        if label not in labels_vus:
+                                            show_final.append(col_)
+                                            labels_vus.add(label)
+                                    st.dataframe(df_sub[show_final].rename(columns=ren_), use_container_width=True, hide_index=True)
 
                 st.markdown("**🧍 Sur soi**")
                 if df_soi.empty: st.caption("Aucun objet sur soi.")
