@@ -208,8 +208,6 @@ _CANON_TABLE: dict[str, str] = {
     "hache à deux mains": "Haches à deux mains", "haches à deux mains": "Haches à deux mains",
     # ── Masses ──
     "masse": "Masses", "masses": "Masses",
-    "masse à une main": "Masses à une main", "masses à une main": "Masses à une main",
-    "masse à deux mains": "Masses à deux mains", "masses à deux mains": "Masses à deux mains",
     "massette": "Masses", "massettes": "Masses",
     "marteau": "Masses", "marteaux": "Masses",
     "marteau de guerre": "Masses", "marteaux de guerre": "Masses",
@@ -258,7 +256,7 @@ SOUS_CAT_LANCER = {"Armes de lancer"}
 SOUS_CAT_MELEE  = {
     "Épées", "Épées à une main", "Épées à deux mains",
     "Haches à une main", "Haches à deux mains",
-    "Masses", "Masses à une main", "Masses à deux mains",
+    "Masses",
     "Lances", "Dagues", "Bâtons", "Fléaux", "Fouets",
     "Armes d'hast", "Matériel de siège", "Autre",
 }
@@ -269,7 +267,7 @@ TOUTES_SOUS_CATEGORIES = sorted([
     "Armes de lancer",
     "Épées", "Épées à une main", "Épées à deux mains",
     "Haches à une main", "Haches à deux mains",
-    "Masses", "Masses à une main", "Masses à deux mains",
+    "Masses",
     "Lances", "Dagues", "Bâtons", "Fléaux", "Fouets",
     "Armes d'hast", "Matériel de siège", "Autre",
 ])
@@ -1188,7 +1186,6 @@ def page_admin():
                                     st.markdown(lbl)
                                     cols_, ren_ = fn(df_sub)
                                     extra = ["quantite","poids_total","localisation"]
-                                    # poids_kg exclu : on affiche poids_total à la place (même label "Enc." sinon doublon)
                                     exclude = {"poids_kg"}
                                     seen = set()
                                     show = []
@@ -1197,7 +1194,6 @@ def page_admin():
                                             show.append(col_)
                                             seen.add(col_)
                                     ren_.update({"quantite":"Qté","poids_total":"Enc.","localisation":"Lieu"})
-                                    # S'assurer qu'aucun label cible n'est en doublon après rename
                                     labels_vus = set()
                                     show_final = []
                                     for col_ in show:
