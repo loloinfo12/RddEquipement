@@ -717,9 +717,24 @@ def _afficher_image_stockee(data_uri: str, nom: str):
                     background:#f5ead0;display:flex;justify-content:center;max-width:320px;margin:0 auto;">{svg_clean}</div>""",
                     unsafe_allow_html=True)
 
+# ─────────────────────────────────────────────
+#  CORRECTION : gestion robuste de svg_illustration (NaN / None)
+# ─────────────────────────────────────────────
+def _safe_str_illustration(val) -> str:
+    """Convertit la valeur svg_illustration en str propre, gère None et NaN pandas."""
+    if val is None:
+        return ""
+    try:
+        if pd.isna(val):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(val)
+
 def afficher_illustration(row: pd.Series, is_admin: bool = False, key_prefix: str = ""):
     nom     = str(row.get("nom", ""))
-    stockee = row.get("svg_illustration", "") or ""
+    # ── CORRECTION : utilisation de _safe_str_illustration ──
+    stockee = _safe_str_illustration(row.get("svg_illustration", None))
     sous_cat= str(row.get("sous_categorie", ""))
     notes   = str(row.get("notes", "") or "")
     degats  = str(row.get("degats", "") or "")
